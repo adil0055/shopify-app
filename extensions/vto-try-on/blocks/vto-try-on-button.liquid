@@ -1,0 +1,408 @@
+{%- liquid
+  assign base_url = block.settings.vto_base_url | strip
+  assign open_mode = block.settings.open_mode | default: "drawer"
+  assign check_config = block.settings.check_product_config | default: true
+  assign config_api_url = block.settings.config_api_url | strip
+-%}
+
+{%- comment -%}
+  VTO Try On Button - Theme App Extension
+  
+  Features:
+  - Conditionally renders based on product VTO configuration
+  - Supports multiple open modes: drawer, popup, new tab, same tab
+  - Uses selected VTO image from merchant configuration
+  - Falls back to variant/featured image if no config found
+  
+  IMPORTANT:
+  - This button must NOT link to the embedded app (OAuth login) for customers.
+  - It should link to an external VTO frontend that does NOT require Shopify auth.
+{%- endcomment -%}
+
+{%- assign separator = "?" -%}
+{%- if base_url contains "?" -%}
+  {%- assign separator = "&" -%}
+{%- endif -%}
+
+{%- liquid
+  assign selected_variant = product.selected_or_first_available_variant
+  assign img = selected_variant.image
+  if img == blank
+    assign img = product.featured_image
+  endif
+  assign default_image_url = ""
+  if img != blank
+    assign default_image_url = img | image_url: width: 900
+  endif
+  
+  assign product_gid = product.id | prepend: "gid://shopify/Product/"
+-%}
+
+{%- comment -%} Container that may be hidden if product is not configured {%- endcomment -%}
+<div 
+  id="vto-button-container-{{ block.id }}"
+  class="vto-button-container"
+  data-product-id="{{ product.id }}"
+  data-product-gid="{{ product_gid }}"
+  data-product-handle="{{ product.handle }}"
+  data-check-config="{{ check_config }}"
+  data-config-api-url="{{ config_api_url }}"
+  style="{% if check_config %}display: none;{% endif %}"
+>
+  {% capture redirect_url -%}
+    {{ base_url }}{{ separator }}shop={{ shop.permanent_domain | url_encode }}&product_handle={{ product.handle | url_encode }}&variant_id={{ product.selected_or_first_available_variant.id }}&title={{ product.title | url_encode }}&image={{ default_image_url | url_encode }}&source=shopify_tae
+  {%- endcapture %}
+  
+  <a
+    href="{{ redirect_url | strip }}"
+    class="vto-try-on-button"
+    id="vto-button-{{ block.id }}"
+    data-vto-open-mode="{{ open_mode }}"
+    data-vto-popup-width="{{ block.settings.popup_width }}"
+    data-vto-popup-height="{{ block.settings.popup_height }}"
+    data-vto-drawer-width="{{ block.settings.drawer_width }}"
+    data-default-image="{{ default_image_url }}"
+    data-base-url="{{ base_url }}"
+  >
+    {{ block.settings.button_label | escape }}
+  </a>
+</div>
+
+<style>
+  .vto-button-container {
+    margin: 8px 0;
+  }
+  
+  .vto-try-on-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 24px;
+    background-color: {{ block.settings.button_bg_color | default: "#000000" }};
+    color: {{ block.settings.button_text_color | default: "#ffffff" }};
+    border: none;
+    border-radius: {{ block.settings.button_radius | default: 4 }}px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.1s ease;
+    width: {{ block.settings.button_width | default: "auto" }};
+  }
+  
+  .vto-try-on-button:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+  
+  .vto-try-on-button:active {
+    transform: translateY(0);
+  }
+  
+  .vto-button-loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+</style>
+
+<script>
+(function() {
+  var container = document.getElementById("vto-button-container-{{ block.id }}");
+  var btn = document.getElementById("vto-button-{{ block.id }}");
+  if (!container || !btn) return;
+  
+  var checkConfig = container.getAttribute("data-check-config") === "true";
+  var configApiUrl = container.getAttribute("data-config-api-url");
+  var productId = container.getAttribute("data-product-id");
+  var productGid = container.getAttribute("data-product-gid");
+  var shopDomain = "{{ shop.permanent_domain }}";
+  
+  // Function to update button URL with configured image
+  function updateButtonUrl(configuredImageUrl) {
+    if (!configuredImageUrl) return;
+    
+    var baseUrl = btn.getAttribute("data-base-url");
+    var separator = baseUrl.indexOf("?") !== -1 ? "&" : "?";
+    
+    var newUrl = baseUrl + separator +
+      "shop=" + encodeURIComponent(shopDomain) +
+      "&product_handle=" + encodeURIComponent("{{ product.handle }}") +
+      "&variant_id={{ product.selected_or_first_available_variant.id }}" +
+      "&title=" + encodeURIComponent("{{ product.title | escape }}") +
+      "&image=" + encodeURIComponent(configuredImageUrl) +
+      "&source=shopify_tae";
+    
+    btn.href = newUrl;
+  }
+  
+  // Check product configuration from API
+  function checkProductConfig() {
+    if (!checkConfig || !configApiUrl) {
+      // No config check needed, show button
+      container.style.display = "";
+      return;
+    }
+    
+    var apiUrl = configApiUrl + 
+      (configApiUrl.indexOf("?") !== -1 ? "&" : "?") +
+      "shop=" + encodeURIComponent(shopDomain) +
+      "&productId=" + encodeURIComponent(productGid);
+    
+    fetch(apiUrl)
+      .then(function(response) {
+        return response.json();
+      })
+      .then(function(data) {
+        if (data.enabled) {
+          // Product is enabled for VTO
+          container.style.display = "";
+          
+          // Update image URL if configured
+          if (data.selectedImageUrl) {
+            updateButtonUrl(data.selectedImageUrl);
+          }
+        } else {
+          // Product is not enabled, keep button hidden
+          container.style.display = "none";
+        }
+      })
+      .catch(function(error) {
+        console.warn("VTO config check failed:", error);
+        // On error, show button with default behavior
+        container.style.display = "";
+      });
+  }
+  
+  // Initialize config check
+  checkProductConfig();
+  
+  // Handle different open modes
+  var openMode = btn.getAttribute("data-vto-open-mode");
+  
+  if (openMode === "new_tab") {
+    btn.setAttribute("target", "_blank");
+    btn.setAttribute("rel", "noopener noreferrer");
+  } else if (openMode === "popup") {
+    btn.addEventListener("click", function(e) {
+      try {
+        var w = parseInt(btn.getAttribute("data-vto-popup-width") || "520", 10);
+        var h = parseInt(btn.getAttribute("data-vto-popup-height") || "720", 10);
+        var left = Math.max(0, Math.floor((window.screen.width - w) / 2));
+        var top = Math.max(0, Math.floor((window.screen.height - h) / 2));
+        var features = "popup=yes,width=" + w + ",height=" + h + ",left=" + left + ",top=" + top + ",resizable=yes,scrollbars=yes";
+        var win = window.open(btn.href, "vto_tryon", features);
+        if (win) {
+          e.preventDefault();
+          win.focus();
+        }
+      } catch (_) {
+        // If popups are blocked, fall back to normal navigation
+      }
+    });
+  } else if (openMode === "drawer") {
+    // Drawer mode - inject styles and handle drawer open
+    function ensureDrawerStyles() {
+      if (document.getElementById("vto-drawer-styles")) return;
+      var style = document.createElement("style");
+      style.id = "vto-drawer-styles";
+      style.textContent = 
+        ".vto-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:999999;display:none;opacity:0;transition:opacity .22s ease}" +
+        ".vto-overlay.open{display:block;opacity:1}" +
+        ".vto-drawer{position:fixed;top:0;right:0;height:100vh;width:520px;max-width:92vw;background:#fff;z-index:1000000;transform:translateX(100%);transition:transform .22s ease;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column}" +
+        ".vto-drawer.open{transform:translateX(0)}" +
+        ".vto-drawer__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #e5e7eb}" +
+        ".vto-drawer__title{font:600 14px/1.3 system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#0f172a}" +
+        ".vto-drawer__close{appearance:none;border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:6px 10px;cursor:pointer;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial}" +
+        ".vto-drawer__close:hover{background:#f3f4f6}" +
+        ".vto-drawer__body{flex:1;min-height:0}" +
+        ".vto-drawer__frame{width:100%;height:100%;border:0;display:block}";
+      document.head.appendChild(style);
+    }
+    
+    function openDrawer(url) {
+      ensureDrawerStyles();
+      
+      var overlay = document.getElementById("vto-overlay");
+      var drawer = document.getElementById("vto-drawer");
+      
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "vto-overlay";
+        overlay.className = "vto-overlay";
+        document.body.appendChild(overlay);
+      }
+      
+      if (!drawer) {
+        drawer = document.createElement("div");
+        drawer.id = "vto-drawer";
+        drawer.className = "vto-drawer";
+        drawer.innerHTML = 
+          '<div class="vto-drawer__header">' +
+          '<div class="vto-drawer__title">Try on</div>' +
+          '<button type="button" class="vto-drawer__close" id="vto-drawer-close" aria-label="Close">Close</button>' +
+          '</div>' +
+          '<div class="vto-drawer__body"><iframe class="vto-drawer__frame" id="vto-drawer-frame" title="Virtual Try-On"></iframe></div>';
+        document.body.appendChild(drawer);
+      }
+      
+      var frame = document.getElementById("vto-drawer-frame");
+      var closeBtn = document.getElementById("vto-drawer-close");
+      
+      // Apply width
+      var w = parseInt(btn.getAttribute("data-vto-drawer-width") || "520", 10);
+      drawer.style.width = isFinite(w) ? w + "px" : "520px";
+      
+      function close() {
+        overlay.classList.remove("open");
+        drawer.classList.remove("open");
+        document.removeEventListener("keydown", onKeyDown);
+        document.body.style.overflow = "";
+      }
+      
+      function onKeyDown(e) {
+        if (e.key === "Escape") close();
+      }
+      
+      overlay.onclick = close;
+      closeBtn.onclick = close;
+      document.addEventListener("keydown", onKeyDown);
+      
+      // Prevent body scroll
+      document.body.style.overflow = "hidden";
+      
+      frame.src = url;
+      overlay.classList.add("open");
+      drawer.classList.add("open");
+    }
+    
+    btn.addEventListener("click", function(e) {
+      try {
+        e.preventDefault();
+        openDrawer(btn.href);
+      } catch (_) {
+        // Fallback: normal navigation
+        window.location.href = btn.href;
+      }
+    });
+  }
+})();
+</script>
+
+{% schema %}
+{
+  "name": "VTO Try On Button",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "header",
+      "content": "Button Settings"
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "Try on"
+    },
+    {
+      "type": "text",
+      "id": "vto_base_url",
+      "label": "External VTO URL",
+      "info": "Example: https://vto.yourdomain.com/tryon. The button will append shop + product context as query params.",
+      "default": "https://example.com/tryon"
+    },
+    {
+      "type": "select",
+      "id": "open_mode",
+      "label": "Open behavior",
+      "default": "drawer",
+      "options": [
+        { "value": "drawer", "label": "Right-side drawer (recommended)" },
+        { "value": "popup", "label": "Popup window" },
+        { "value": "new_tab", "label": "New tab" },
+        { "value": "same_tab", "label": "Same tab" }
+      ]
+    },
+    {
+      "type": "header",
+      "content": "Product Configuration"
+    },
+    {
+      "type": "checkbox",
+      "id": "check_product_config",
+      "label": "Only show for configured products",
+      "info": "When enabled, the button only appears on products that have been set up in the app dashboard.",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "config_api_url",
+      "label": "Configuration API URL",
+      "info": "Your app's API endpoint for checking product configuration (e.g., https://your-app.com/api/vto-config)"
+    },
+    {
+      "type": "header",
+      "content": "Button Appearance"
+    },
+    {
+      "type": "color",
+      "id": "button_bg_color",
+      "label": "Background color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "button_text_color",
+      "label": "Text color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "button_radius",
+      "label": "Border radius",
+      "min": 0,
+      "max": 30,
+      "step": 2,
+      "default": 4,
+      "unit": "px"
+    },
+    {
+      "type": "select",
+      "id": "button_width",
+      "label": "Button width",
+      "default": "auto",
+      "options": [
+        { "value": "auto", "label": "Auto (fit content)" },
+        { "value": "100%", "label": "Full width" }
+      ]
+    },
+    {
+      "type": "header",
+      "content": "Drawer Settings"
+    },
+    {
+      "type": "number",
+      "id": "drawer_width",
+      "label": "Drawer width (px)",
+      "default": 520
+    },
+    {
+      "type": "header",
+      "content": "Popup Settings"
+    },
+    {
+      "type": "number",
+      "id": "popup_width",
+      "label": "Popup width (px)",
+      "default": 520
+    },
+    {
+      "type": "number",
+      "id": "popup_height",
+      "label": "Popup height (px)",
+      "default": 720
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,159 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// PostgreSQL database - more reliable than SQLite for development
+// Set DATABASE_URL in your .env file
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum VtoEventType {
+  /// User clicked the Try On button (storefront redirect out).
+  REDIRECT_OUT
+
+  /// Future: external frontend initiated a VTO job.
+  VTO_JOB_REQUEST
+
+  /// Future: job completed successfully.
+  VTO_JOB_SUCCESS
+
+  /// Future: job failed.
+  VTO_JOB_FAILURE
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model ShopSettings {
+  /// The myshopify domain. This must be unique per installation.
+  shop       String   @id
+
+  /// Base URL for the external (non-embedded) VTO frontend, e.g. https://vto.example.com/tryon
+  /// Not a secret, but validated to reduce misconfiguration / open redirect risk.
+  vtoBaseUrl String
+
+  /// Allows merchants to disable the try-on button without uninstalling the app/block.
+  isEnabled  Boolean  @default(true)
+
+  /// Phase 2: plan selection visualization (billing integration comes later).
+  planTier   PlanTier @default(FREE)
+
+  /// Button customization settings
+  btnLabel       String   @default("Try On")
+  btnColor       String   @default("#000000")
+  btnTextColor   String   @default("#ffffff")
+  btnBorderRadius Int     @default(4)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // New settings fields
+  emailCollectionStep   Int      @default(2)
+  maxGenerationsPerWeek Int      @default(6)
+  dataRetentionDays     Int      @default(7)
+  appLanguage           String   @default("shopify_default")
+}
+
+model ApiCallLog {
+  id        String       @id @default(cuid())
+  shop      String
+  createdAt DateTime     @default(now())
+
+  /// High-level event type. In Phase 2 these can be sample records.
+  eventType VtoEventType
+
+  /// Success/failure status for analytics.
+  isSuccess Boolean
+
+  /// Non-sensitive debug context (never store PII).
+  requestId String?
+  message   String?
+  metadata  Json?
+
+  @@index([shop, createdAt])
+  @@index([shop, eventType, createdAt])
+}
+
+/// Configuration for which products have VTO enabled and which image to use.
+/// This is the core data model for the onboarding flow.
+/// Multi-store support: shop + productId is the composite unique key.
+model ProductVtoConfig {
+  id              String   @id @default(cuid())
+  
+  /// The myshopify domain - links to the store
+  shop            String
+  
+  /// Shopify product GID (e.g., "gid://shopify/Product/123456")
+  productId       String
+  
+  /// Product title for display (cached, Shopify is source of truth)
+  productTitle    String
+  
+  /// Product thumbnail URL for display (cached)
+  productImage    String?
+  
+  /// Selected image GID for VTO (e.g., "gid://shopify/ProductImage/789")
+  selectedImageId String
+  
+  /// Selected image URL for VTO processing
+  selectedImageUrl String
+  
+  /// Whether VTO is currently enabled for this product
+  isEnabled       Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([shop, productId])
+  @@index([shop])
+  @@index([shop, isEnabled])
+}
+
+/// Tracks onboarding completion status per shop
+model OnboardingStatus {
+  /// The myshopify domain
+  shop             String   @id
+  
+  /// Whether the merchant has completed product selection
+  productsSelected Boolean  @default(false)
+  
+  /// Whether the merchant has completed image selection for all enabled products
+  imagesSelected   Boolean  @default(false)
+  
+  /// Whether onboarding is fully complete
+  isComplete       Boolean  @default(false)
+  
+  /// Timestamp when onboarding was completed
+  completedAt      DateTime?
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

@@ -1,0 +1,18 @@
+{
+  "name": "VTO Try On",
+  "blocks": {
+    "vto-try-on-button": {
+      "name": "VTO Try On Button",
+      "settings": {
+        "button_label": "Button label",
+        "vto_base_url": "External VTO URL",
+        "open_mode": "Open behavior",
+        "drawer_width": "Drawer width (px)",
+        "popup_width": "Popup width (px)",
+        "popup_height": "Popup height (px)"
+      }
+    }
+  }
+}
+
+
