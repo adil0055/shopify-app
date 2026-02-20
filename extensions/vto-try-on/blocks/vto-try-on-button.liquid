@@ -1,8 +1,8 @@
 {%- liquid
-  assign base_url = block.settings.vto_base_url | strip
+  assign base_url = "/apps/vto/vto"
   assign open_mode = block.settings.open_mode | default: "drawer"
   assign check_config = block.settings.check_product_config | default: true
-  assign config_api_url = block.settings.config_api_url | strip
+  assign config_api_url = "/apps/vto/api/vto-config"
 -%}
 
 {%- comment -%}
@@ -306,13 +306,6 @@
       "default": "Try on"
     },
     {
-      "type": "text",
-      "id": "vto_base_url",
-      "label": "External VTO URL",
-      "info": "Example: https://vto.yourdomain.com/tryon. The button will append shop + product context as query params.",
-      "default": "https://example.com/tryon"
-    },
-    {
       "type": "select",
       "id": "open_mode",
       "label": "Open behavior",
@@ -334,12 +327,6 @@
       "label": "Only show for configured products",
       "info": "When enabled, the button only appears on products that have been set up in the app dashboard.",
       "default": true
-    },
-    {
-      "type": "text",
-      "id": "config_api_url",
-      "label": "Configuration API URL",
-      "info": "Your app's API endpoint for checking product configuration (e.g., https://your-app.com/api/vto-config)"
     },
     {
       "type": "header",

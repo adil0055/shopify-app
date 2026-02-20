@@ -1,8 +1,8 @@
 import { redirect } from "react-router";
-import { useLoaderData, useNavigation, Form } from "react-router";
+import { useLoaderData, useNavigation, useSubmit } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
-import { getOrCreateShopSettings, updateShopSettings } from "../models/shopSettings.server";
+import { getOrCreateShopSettings, updateButtonCustomization } from "../models/shopSettings.server";
 
 export const loader = async ({ request }) => {
     const { session } = await authenticate.admin(request);
@@ -21,7 +21,7 @@ export const action = async ({ request }) => {
         btnBorderRadius: parseInt(formData.get("btnBorderRadius") || "4", 10),
     };
 
-    await updateShopSettings(session.shop, updates);
+    await updateButtonCustomization(session.shop, updates);
 
     return redirect("/app/onboarding/products");
 };
@@ -29,7 +29,8 @@ export const action = async ({ request }) => {
 export default function OnboardingCustomize() {
     const { settings } = useLoaderData();
     const navigation = useNavigation();
-    const isSaving = navigation.state === "submitting";
+    const submit = useSubmit();
+    const isSaving = navigation.state !== "idle";
 
     const [label, setLabel] = useState(settings.btnLabel || "Try On");
     const [color, setColor] = useState(settings.btnColor || "#000000");
@@ -44,7 +45,7 @@ export default function OnboardingCustomize() {
 
                 <s-grid columns={{ xs: 1, md: 2 }} gap="loose">
                     <s-box padding="loose" borderWidth="base" borderRadius="base">
-                        <Form method="post">
+                        <div>
                             <s-stack direction="block" gap="base">
                                 <s-text-field
                                     name="btnLabel"
@@ -92,13 +93,25 @@ export default function OnboardingCustomize() {
                                         <s-link href="/app/onboarding/plan">
                                             <s-button>Back</s-button>
                                         </s-link>
-                                        <s-button submit variant="primary" loading={isSaving}>
-                                            Save & Continue →
-                                        </s-button>
+                                        <div
+                                            onClick={() => {
+                                                if (isSaving) return;
+                                                const formData = new FormData();
+                                                formData.append("btnLabel", label);
+                                                formData.append("btnColor", color);
+                                                formData.append("btnTextColor", textColor);
+                                                formData.append("btnBorderRadius", radius.toString());
+                                                submit(formData, { method: "post" });
+                                            }}
+                                        >
+                                            <s-button variant="primary" loading={isSaving}>
+                                                Save & Continue →
+                                            </s-button>
+                                        </div>
                                     </s-stack>
                                 </s-box>
                             </s-stack>
-                        </Form>
+                        </div>
                     </s-box>
 
                     <s-box padding="loose" background="subdued" borderRadius="base" borderColor="base" borderWidth="base">

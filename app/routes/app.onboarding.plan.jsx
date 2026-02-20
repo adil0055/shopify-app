@@ -1,8 +1,7 @@
-import { redirect } from "react-router";
-import { useLoaderData, useFetcher } from "react-router";
+import { redirect, useLoaderData, useSubmit, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import { getOrCreateShopSettings, updateShopSettings } from "../models/shopSettings.server";
+import { getOrCreateShopSettings, updatePlanTier } from "../models/shopSettings.server";
 
 export const loader = async ({ request }) => {
     const { session } = await authenticate.admin(request);
@@ -16,7 +15,7 @@ export const action = async ({ request }) => {
     const planTier = formData.get("planTier");
 
     if (planTier) {
-        await updateShopSettings(session.shop, { planTier });
+        await updatePlanTier(session.shop, planTier);
     }
 
     // Go to next step
@@ -25,9 +24,11 @@ export const action = async ({ request }) => {
 
 export default function OnboardingPlan() {
     const { settings } = useLoaderData();
-    const fetcher = useFetcher();
+    const submit = useSubmit();
+    const navigation = useNavigation();
     const currentPlan = settings.planTier || "FREE";
-    const isSubmitting = fetcher.state !== "idle";
+    const isSubmitting = navigation.state !== "idle";
+    const submittingPlanId = navigation.formData?.get("planTier");
 
     const plans = [
         {
@@ -82,18 +83,24 @@ export default function OnboardingPlan() {
                                         </s-stack>
                                     </s-box>
 
-                                    <fetcher.Form method="post">
-                                        <input type="hidden" name="planTier" value={plan.id} />
+                                    <div
+                                        onClick={() => {
+                                            if (isSubmitting) return;
+                                            const formData = new FormData();
+                                            formData.append("planTier", plan.id);
+                                            submit(formData, { method: "post" });
+                                        }}
+                                        style={{ width: "100%" }}
+                                    >
                                         <s-button
-                                            submit
                                             variant={currentPlan === plan.id ? "primary" : "secondary"}
                                             fullWidth
                                             disabled={isSubmitting}
-                                            loading={isSubmitting && fetcher.formData?.get("planTier") === plan.id}
+                                            loading={isSubmitting && submittingPlanId === plan.id}
                                         >
                                             {currentPlan === plan.id ? "Selected" : "Choose " + plan.name}
                                         </s-button>
-                                    </fetcher.Form>
+                                    </div>
                                 </s-stack>
                             </s-box>
                         ))}

@@ -73,4 +73,15 @@ export async function updatePlanTier(shop, planTier) {
   });
 }
 
-
+export async function updateButtonCustomization(shop, updates) {
+  return prisma.shopSettings.upsert({
+    where: { shop },
+    create: {
+      shop,
+      vtoBaseUrl: DEFAULT_VTO_BASE_URL,
+      isEnabled: true,
+      ...updates
+    },
+    update: updates,
+  });
+}
