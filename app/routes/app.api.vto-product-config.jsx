@@ -1,42 +1,120 @@
 import { authenticate } from "../shopify.server";
 import { getProductConfig, upsertProductConfig } from "../models/productVtoConfig.server";
 
-
-
 /**
  * Admin UI Extension API endpoint for VTO product configuration.
- * 
+ *
  * GET: Fetch existing VTO config + product images for a product
  * POST: Save VTO config for a product
- * 
+ *
  * Auth: Uses Shopify session token from the admin extension
  */
 
-function getCorsHeaders(request) {
-    const origin = request.headers.get("Origin") || "*";
-    return {
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Credentials": "true",
-    };
-}
-
-function jsonResponse(data, status, corsHeaders) {
+function jsonResponse(data, status) {
     return new Response(JSON.stringify(data), {
         status,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        headers: { "Content-Type": "application/json" },
     });
 }
 
-export const loader = async ({ request }) => {
-    const corsHeaders = getCorsHeaders(request);
+function withCors(response) {
+    return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+    });
+}
 
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: corsHeaders });
+async function parseGraphql(response) {
+    const json = await response.json();
+    if (json?.errors?.length) {
+        const message = json.errors.map((e) => e.message).join("; ");
+        throw new Error(`Shopify GraphQL errors: ${message}`);
     }
+    return json;
+}
 
+async function fetchProductWithImages(admin, productId) {
+    const gqlResponse = await admin.graphql(
+        `#graphql
+        query getProductData($id: ID!) {
+            product(id: $id) {
+                title
+                images(first: 50) {
+                    nodes {
+                        id
+                        url
+                        altText
+                    }
+                }
+                metafieldVtoEnabled: metafield(namespace: "vton", key: "enabled") {
+                    value
+                }
+                metafieldVtoImageId: metafield(namespace: "vton", key: "image_id") {
+                    value
+                }
+            }
+        }`,
+        { variables: { id: productId } }
+    );
+    const gqlData = await parseGraphql(gqlResponse);
+    return gqlData?.data?.product || null;
+}
+
+async function fetchProductForSave(admin, productId) {
+    const gqlResponse = await admin.graphql(
+        `#graphql
+        query getProductForSave($id: ID!) {
+            product(id: $id) {
+                title
+                images(first: 1) {
+                    nodes {
+                        url
+                    }
+                }
+            }
+        }`,
+        { variables: { id: productId } }
+    );
+    const gqlData = await parseGraphql(gqlResponse);
+    return gqlData?.data?.product || null;
+}
+
+async function fetchImageById(admin, imageId) {
+    if (!imageId) return null;
+    const gqlResponse = await admin.graphql(
+        `#graphql
+        query getImageById($id: ID!) {
+            node(id: $id) {
+                __typename
+                ... on MediaImage {
+                    image {
+                        url
+                        altText
+                    }
+                }
+                ... on ProductImage {
+                    id
+                    url
+                    altText
+                }
+            }
+        }`,
+        { variables: { id: imageId } }
+    );
+    const gqlData = await parseGraphql(gqlResponse);
+    const node = gqlData?.data?.node;
+    if (!node) return null;
+    if (node.__typename === "MediaImage") {
+        return node.image ? { url: node.image.url, altText: node.image.altText } : null;
+    }
+    if (node.__typename === "ProductImage") {
+        return { url: node.url, altText: node.altText };
+    }
+    return null;
+}
+
+export const loader = async ({ request }) => {
     let admin;
     let session;
     try {
@@ -45,8 +123,8 @@ export const loader = async ({ request }) => {
         session = authResult.session;
     } catch (error) {
         console.error("Authenticate.admin failed:", error);
-        if (error instanceof Response && error.status === 302) {
-            return jsonResponse({ error: "Unauthorized - Session invalid" }, 401, corsHeaders);
+        if (error instanceof Response) {
+            return withCors(error);
         }
         throw error;
     }
@@ -55,7 +133,7 @@ export const loader = async ({ request }) => {
     const productId = url.searchParams.get("productId");
 
     if (!productId) {
-        return jsonResponse({ error: "Missing productId" }, 400, corsHeaders);
+        return jsonResponse({ error: "Missing productId" }, 400);
     }
 
     // Normalize product ID
@@ -65,34 +143,10 @@ export const loader = async ({ request }) => {
     }
 
     try {
-        const gqlResponse = await admin.graphql(
-            `#graphql
-            query getProductData($id: ID!) {
-                product(id: $id) {
-                    title
-                    images(first: 50) {
-                        nodes {
-                            id
-                            url
-                            altText
-                        }
-                    }
-                    metafieldVtoEnabled: metafield(namespace: "vton", key: "enabled") {
-                        value
-                    }
-                    metafieldVtoImageId: metafield(namespace: "vton", key: "image_id") {
-                        value
-                    }
-                }
-            }`,
-            { variables: { id: normalizedId } }
-        );
-
-        const gqlData = await gqlResponse.json();
-        const product = gqlData?.data?.product;
+        const product = await fetchProductWithImages(admin, normalizedId);
 
         if (!product) {
-            return jsonResponse({ error: "Product not found" }, 404, corsHeaders);
+            return jsonResponse({ error: "Product not found" }, 404);
         }
 
         // 1. Try to get config from our DB first (Source of Truth for Storefront)
@@ -108,8 +162,7 @@ export const loader = async ({ request }) => {
                     productTitle: dbConfig.productTitle,
                     images: product?.images?.nodes || []
                 },
-                200,
-                corsHeaders
+                200
             );
         }
 
@@ -119,7 +172,18 @@ export const loader = async ({ request }) => {
         const selectedImageId = product.metafieldVtoImageId?.value || "";
 
         // Resolve selectedImageUrl from the image list
-        const selectedImage = images.find(img => img.id === selectedImageId);
+        let selectedImage = images.find(img => img.id === selectedImageId);
+        if (!selectedImage && selectedImageId) {
+            const resolved = await fetchImageById(admin, selectedImageId);
+            if (resolved?.url) {
+                selectedImage = {
+                    id: selectedImageId,
+                    url: resolved.url,
+                    altText: resolved.altText || "",
+                };
+                images.unshift(selectedImage);
+            }
+        }
         const selectedImageUrl = selectedImage ? selectedImage.url : "";
 
         return jsonResponse(
@@ -131,24 +195,16 @@ export const loader = async ({ request }) => {
                 productTitle: product.title || "",
                 images,
             },
-            200,
-            corsHeaders
+            200
         );
 
     } catch (error) {
         console.error("Error in VTO config loader:", error);
-        return jsonResponse({ error: "Internal server error" }, 500, corsHeaders);
+        return jsonResponse({ error: "Internal server error" }, 500);
     }
 };
 
 export const action = async ({ request }) => {
-    const corsHeaders = getCorsHeaders(request);
-
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: corsHeaders });
-    }
-
     let admin;
     let session;
     try {
@@ -157,8 +213,8 @@ export const action = async ({ request }) => {
         session = authResult.session;
     } catch (error) {
         console.error("Action Authenticate.admin failed:", error);
-        if (error instanceof Response && error.status === 302) {
-            return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+        if (error instanceof Response) {
+            return withCors(error);
         }
         throw error;
     }
@@ -168,7 +224,7 @@ export const action = async ({ request }) => {
         const { productId, isEnabled, selectedImageId } = body;
 
         if (!productId) {
-            return jsonResponse({ error: "Missing productId" }, 400, corsHeaders);
+            return jsonResponse({ error: "Missing productId" }, 400);
         }
 
         // Normalize product ID
@@ -215,46 +271,45 @@ export const action = async ({ request }) => {
             }
         );
 
-        const data = await response.json();
+        const data = await parseGraphql(response);
         const userErrors = data?.data?.metafieldsSet?.userErrors || [];
 
         if (userErrors.length > 0) {
             console.error("Metafields set errors:", userErrors);
-            // We continue even if metafields fail, because DB value is more important for our app
+            return jsonResponse(
+                { error: "Metafields update failed", userErrors },
+                422
+            );
         }
 
-        // SYNC WITH LOCAL DB (Critical for Storefront Button)
-        // We need image URL and product title, but we might not have them in the POST body.
-        // For simplicity, we'll try to use what's sent, or just update the enabled/imageId status if existing.
-        // Ideally the frontend sends everything.
+        const product = await fetchProductForSave(admin, normalizedId);
+        if (!product) {
+            return jsonResponse({ error: "Product not found" }, 404);
+        }
 
-        // If we don't have details, better to fetch them or assume partial update.
-        // `upsertProductConfig` expects full details for create, but update only needs partial.
-        // Let's rely on what the frontend sends. The `BlockExtension.jsx` sends:
-        // productId, productTitle, isEnabled, selectedImageId, selectedImageUrl, productImage
+        const resolvedSelectedImage = await fetchImageById(admin, selectedImageId);
 
         await upsertProductConfig({
             shop: session.shop, // Use the session shop
             productId: normalizedId,
-            productTitle: body.productTitle || "",
-            productImage: body.productImage || "",
+            productTitle: product.title || "",
+            productImage: product.images?.nodes?.[0]?.url || "",
             selectedImageId: selectedImageId || "",
-            selectedImageUrl: body.selectedImageUrl || "",
+            selectedImageUrl: resolvedSelectedImage?.url || "",
             isEnabled: Boolean(isEnabled)
         });
 
         return jsonResponse(
             { success: true, message: "VTO configuration saved" },
-            200,
-            corsHeaders
+            200
         );
 
     } catch (error) {
         console.error("Error saving VTO config:", error);
         return jsonResponse(
             { error: "Failed to save configuration" },
-            500,
-            corsHeaders
+            500
         );
     }
 };
+

@@ -7,10 +7,9 @@ export const action = async ({ request }) => {
   console.log(`Received ${topic} webhook for ${shop}`);
 
   // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // If this webhook already ran, the session may have been deleted previously.
-  if (session) {
-    // Clean up ALL shop data to comply with Shopify's data protection requirements
-    // and prevent orphaned records.
+  // Clean up ALL shop data to comply with Shopify's data protection requirements
+  // and prevent orphaned records.
+  if (shop) {
     try {
       await db.$transaction([
         // 1. Remove all product VTO configurations
@@ -25,7 +24,7 @@ export const action = async ({ request }) => {
         // 4. Remove all API call logs for this shop
         db.apiCallLog.deleteMany({ where: { shop } }),
 
-        // 5. Remove sessions (last, since we're using it above)
+        // 5. Remove sessions (last)
         db.session.deleteMany({ where: { shop } }),
       ]);
 

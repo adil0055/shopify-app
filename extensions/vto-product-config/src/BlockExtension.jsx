@@ -21,7 +21,9 @@ export default reactExtension(TARGET, () => <App />);
 
 function App() {
   // @ts-ignore
-  const { data } = useApi();
+  const api = useApi();
+  const { data, sessionToken } = api;
+
   // Ensure we get the product ID correctly from the extension data context
   const productId = data?.selected?.[0]?.id || data?.product?.id;
 
@@ -34,10 +36,30 @@ function App() {
   const [statusMsg, setStatusMsg] = useState('');
   const [statusTone, setStatusTone] = useState('info');
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [authError, setAuthError] = useState(false);
+
+  /**
+   * Get a fresh session token and build auth headers.
+   * The session token is a signed JWT that authenticate.admin() on the server
+   * accepts in the Authorization header — no cookies needed.
+   */
+  const getAuthHeaders = useCallback(async () => {
+    try {
+      // sessionToken.get() returns a fresh, signed JWT
+      const token = await sessionToken.get();
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+    } catch (err) {
+      console.error('Failed to get session token:', err);
+      throw err;
+    }
+  }, [sessionToken]);
 
   useEffect(() => {
     // 🚨 ABSOLUTE GUARD
-    if (!productId || typeof productId !== "string") {
+    if (!productId || typeof productId !== 'string') {
       setLoading(false);
       return;
     }
@@ -47,14 +69,27 @@ function App() {
     const loadConfig = async () => {
       try {
         setLoading(true);
+        setAuthError(false);
+
+        const headers = await getAuthHeaders();
 
         const response = await fetch(
-          `/app/api/vto-product-config?productId=${encodeURIComponent(productId)}`
+          `/app/api/vto-product-config?productId=${encodeURIComponent(productId)}`,
+          { headers }
         );
 
         // ✅ Ignore 404 during creation lifecycle
         if (response.status === 404) {
           if (isMounted) setLoading(false);
+          return;
+        }
+
+        // 401/403 means auth failed — show meaningful error, don't loop
+        if (response.status === 401 || response.status === 403) {
+          if (isMounted) {
+            setAuthError(true);
+            setLoading(false);
+          }
           return;
         }
 
@@ -69,13 +104,7 @@ function App() {
         setIsEnabled(!!result.enabled);
         setSelectedImageId(result.selectedImageId || '');
         setProductImages(result.images || []);
-        // Note: productTitle is not strictly needed for display if we have images, 
-        // but we can set it if we want. The user snippet sets it.
         setProductTitle(result.productTitle || '');
-
-        // Also ensure isReady is true if we have loaded successfully
-
-
       } catch (err) {
         console.error('VTO load error:', err);
       } finally {
@@ -88,8 +117,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-
-  }, [productId]);
+  }, [productId, getAuthHeaders]);
 
   // Save configuration
   const saveConfig = useCallback(
@@ -99,6 +127,8 @@ function App() {
       try {
         setSaving(true);
         setStatusMsg('');
+
+        const headers = await getAuthHeaders();
 
         const selectedImage = productImages.find((img) => img.id === imageId);
 
@@ -113,13 +143,19 @@ function App() {
 
         const response = await fetch('/app/api/vto-product-config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(payload),
         });
 
+        if (response.status === 401 || response.status === 403) {
+          setStatusMsg('Session expired. Please refresh the page.');
+          setStatusTone('critical');
+          return;
+        }
+
         if (!response.ok) {
           const text = await response.text();
-          console.error("Save error:", text);
+          console.error('Save error:', text);
           throw new Error('Failed to save');
         }
 
@@ -134,14 +170,12 @@ function App() {
         setSaving(false);
       }
     },
-    [productId, productTitle, productImages]
+    [productId, productTitle, productImages, getAuthHeaders]
   );
 
   const handleToggle = useCallback(
     (newChecked) => {
       setIsEnabled(newChecked);
-      // Auto-save when toggling. If turning off, clear selection in saved data (optional)
-      // or keep selection in state but save as disabled.
       saveConfig(newChecked, selectedImageId);
     },
     [selectedImageId, saveConfig]
@@ -151,7 +185,6 @@ function App() {
     (imageId) => {
       setSelectedImageId(imageId);
       setIsPickerOpen(false);
-      // Auto-save on selection if enabled
       if (isEnabled) {
         saveConfig(true, imageId);
       }
@@ -159,16 +192,22 @@ function App() {
     [isEnabled, saveConfig]
   );
 
-
-
-
-
   if (loading) {
     return (
       <AdminBlock title="Virtual Try-On">
         <BlockStack inlineAlignment="center" gap="base">
           <Text>Loading VTO settings...</Text>
         </BlockStack>
+      </AdminBlock>
+    );
+  }
+
+  if (authError) {
+    return (
+      <AdminBlock title="Virtual Try-On">
+        <Banner tone="critical">
+          <Text>Authentication failed. Please refresh the product page to reconnect.</Text>
+        </Banner>
       </AdminBlock>
     );
   }
@@ -253,8 +292,8 @@ function App() {
                               onPress={() => handleImageSelect(image.id)}
                             >
                               <Box
-                                border={isSelected ? "highlight" : "base"}
-                                borderWidth={isSelected ? "medium" : "thin"}
+                                border={isSelected ? 'highlight' : 'base'}
+                                borderWidth={isSelected ? 'medium' : 'thin'}
                                 borderRadius="base"
                                 inlineSize={64}
                                 blockSize={64}

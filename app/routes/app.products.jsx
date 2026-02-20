@@ -106,19 +106,32 @@ export const loader = async ({ request }) => {
 
     // 3. Fetch Local Configs
     const existingConfigs = await getAllProductConfigs(shop);
-    // Create a Set of enabled product IDs for fast lookup
-    // Also track which ones have images selected
     const enabledConfigs = existingConfigs.filter(c => c.isEnabled);
     const enabledProductIds = new Set(enabledConfigs.map(c => c.productId));
     const configMap = new Map(enabledConfigs.map(c => [c.productId, c]));
 
-    // Merge status into products
+    // 4. Create Active VTO Products array rich with DB data
+    const activeVtoProducts = enabledConfigs.map(config => {
+        // Try to find the detailed product in the Shopify GraphQL response (if it happened to be on the current page)
+        const detailedProduct = products.find(p => p.id === config.productId);
+        return {
+            id: config.productId,
+            title: config.productTitle || (detailedProduct ? detailedProduct.title : "Product Name"),
+            featuredImageUrl: config.productImage,
+            selectedImageId: config.selectedImageId,
+            selectedImageUrl: config.selectedImageUrl,
+            missingImage: !config.selectedImageId,
+            // Fallback for Shopify images if it was in the current page
+            images: detailedProduct ? detailedProduct.images?.nodes : []
+        };
+    });
+
+    // Merge status into paginated products
     const productsWithStatus = products.map(p => {
         const config = configMap.get(p.id);
         const selectedImageId = config?.selectedImageId;
         const missingImage = Boolean(config && !selectedImageId);
 
-        // Find the selected image URL if we have the ID, either from local images list or config fallback
         let selectedImageUrl = config?.selectedImageUrl;
         if (selectedImageId && p.images?.nodes) {
             const found = p.images.nodes.find(img => img.id === selectedImageId);
@@ -135,12 +148,10 @@ export const loader = async ({ request }) => {
         };
     });
 
-    // For collections, we don't have a "Collection Enabled" state in logic yet, 
-    // so we'll just show them as actionable items.
-
     return {
         collections,
         products: productsWithStatus,
+        activeVtoProducts,
         pageInfo,
         searchQuery,
         enabledCount: enabledProductIds.size
@@ -209,13 +220,14 @@ export const action = async ({ request }) => {
 };
 
 export default function ManageProducts() {
-    const { collections, products, pageInfo, searchQuery, enabledCount } = useLoaderData();
+    const { collections, products, activeVtoProducts, pageInfo, searchQuery, enabledCount } = useLoaderData();
     const submit = useSubmit();
     const navigation = useNavigation();
     const actionData = useActionData();
     const navigate = useNavigate();
 
-    const [activeTab, setActiveTab] = useState("collections"); // 'collections' | 'products'
+    // Default to 'active' view to distinguish from onboarding list
+    const [activeTab, setActiveTab] = useState("active"); // 'active' | 'collections' | 'products'
     const [localSearch, setLocalSearch] = useState(searchQuery || "");
 
     const isLoading = navigation.state !== "idle";
@@ -366,23 +378,99 @@ export default function ManageProducts() {
             <s-section>
                 <s-stack direction="inline" gap="base">
                     <s-button
-                        variant={activeTab === "collections" ? "primary" : "tertiary"}
-                        onClick={() => setActiveTab("collections")}
+                        variant={activeTab === "active" ? "primary" : "tertiary"}
+                        onClick={() => setActiveTab("active")}
                     >
-                        Collections
+                        Active VTO Products ({enabledCount})
                     </s-button>
                     <s-button
                         variant={activeTab === "products" ? "primary" : "tertiary"}
                         onClick={() => setActiveTab("products")}
                     >
-                        Individual Products
+                        Store Products
+                    </s-button>
+                    <s-button
+                        variant={activeTab === "collections" ? "primary" : "tertiary"}
+                        onClick={() => setActiveTab("collections")}
+                    >
+                        Collections
                     </s-button>
                 </s-stack>
             </s-section>
 
             {/* Content Area */}
-            {activeTab === "collections" ? (
-                <s-section title="Collections">
+            {activeTab === "active" ? (
+                <s-section title="Active VTO Products">
+                    {activeVtoProducts.length === 0 ? (
+                        <s-box padding="loose" borderWidth="base" borderRadius="base" background="bg-surface">
+                            <s-stack direction="block" align="center" gap="base">
+                                <s-text variant="headingMd">No Active Products</s-text>
+                                <s-text tone="subdued">Enable products from your store to activate Virtual Try-On.</s-text>
+                                <s-button variant="primary" onClick={() => setActiveTab("products")}>Add Products</s-button>
+                            </s-stack>
+                        </s-box>
+                    ) : (
+                        <div style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                            gap: "20px"
+                        }}>
+                            {activeVtoProducts.map(p => (
+                                <s-box key={p.id} padding="base" borderWidth="base" borderRadius="base" background="bg-surface" overflow="hidden" style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ position: 'relative', width: '100%', paddingBottom: '100%', backgroundColor: '#f9fafb', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px' }}>
+                                        {p.selectedImageUrl || p.featuredImageUrl ? (
+                                            <img
+                                                src={p.selectedImageUrl || p.featuredImageUrl}
+                                                alt={p.title}
+                                                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain', padding: '16px' }}
+                                            />
+                                        ) : (
+                                            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <s-text tone="subdued">No Image</s-text>
+                                            </div>
+                                        )}
+                                        {p.missingImage && (
+                                            <div style={{ position: 'absolute', top: '12px', right: '12px' }}>
+                                                <s-badge tone="attention">Needs Image</s-badge>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <s-text fontWeight="semibold" variant="bodyLg" style={{ marginBottom: "8px" }}>{p.title}</s-text>
+                                    <s-stack direction="inline" align="center" gap="base" justify="space-between" style={{ marginTop: 'auto' }}>
+                                        {/* Since GraphQL isn't deep loading images here by default if they weren't in current page, 
+                                            we rely on the main products tab for full image selection if missing nodes. 
+                                            But we can still allow navigation. */}
+                                        <s-button
+                                            variant="secondary"
+                                            onClick={() => {
+                                                // If we have nodes available, we can open the modal. Otherwise fallback to the products tab.
+                                                if (p.images && p.images.length > 0) {
+                                                    handleImageSelect(p);
+                                                } else {
+                                                    setActiveTab("products");
+                                                    setLocalSearch(p.title);
+                                                    setTimeout(() => handleSearch(), 100);
+                                                }
+                                            }}
+                                        >
+                                            Change Image
+                                        </s-button>
+                                        <s-button
+                                            variant="plain"
+                                            tone="critical"
+                                            disabled={isLoading}
+                                            onClick={() => handleProductToggle(p, "disable_product")}
+                                        >
+                                            Disable
+                                        </s-button>
+                                    </s-stack>
+                                </s-box>
+                            ))}
+                        </div>
+                    )}
+                </s-section>
+            ) : activeTab === "collections" ? (
+                <s-section title="Add from Collections">
                     <s-box padding="none" borderWidth="base" borderRadius="base" overflow="hidden">
                         <s-table>
                             <s-table-header>
@@ -410,7 +498,7 @@ export default function ManageProducts() {
                                             <s-form method="post">
                                                 <input type="hidden" name="intent" value="enable_collection" />
                                                 <input type="hidden" name="collectionId" value={c.id} />
-                                                <s-button submit disabled={isLoading}>Enable All Products</s-button>
+                                                <s-button submit disabled={isLoading}>Enable All</s-button>
                                             </s-form>
                                         </s-table-cell>
                                     </s-table-row>
@@ -420,14 +508,14 @@ export default function ManageProducts() {
                     </s-box>
                 </s-section>
             ) : (
-                <s-section title="Products">
+                <s-section title="Browse Store Products">
                     <s-stack direction="block" gap="base">
                         {/* Search Bar */}
                         <s-stack direction="inline" gap="base">
                             <s-text-field
                                 value={localSearch}
                                 onChange={(e) => setLocalSearch(e.target.value)}
-                                placeholder="Search products..."
+                                placeholder="Search all products..."
                             />
                             <s-button onClick={handleSearch} disabled={isLoading}>Search</s-button>
                         </s-stack>
@@ -501,7 +589,7 @@ export default function ManageProducts() {
                                                         disabled={isLoading}
                                                         onClick={() => handleProductToggle(p, "enable_product")}
                                                     >
-                                                        Add
+                                                        Enable Try-On
                                                     </s-button>
                                                 )}
                                             </s-table-cell>

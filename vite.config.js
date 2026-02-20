@@ -80,7 +80,9 @@ function adminExtensionCors() {
 export default defineConfig({
   server: {
     allowedHosts: [host],
-    cors: false, // We handle CORS manually in the middleware
+    cors: {
+      preflightContinue: true,
+    },
     port: Number(process.env.PORT || 3000),
     hmr: hmrConfig,
     fs: {
