@@ -1,4 +1,5 @@
 import { getProductConfig, getEnabledProducts } from "../models/productVtoConfig.server";
+import { getOrCreateShopSettings } from "../models/shopSettings.server";
 import { checkRateLimit } from "../utils/rateLimit.server";
 
 /**
@@ -62,6 +63,15 @@ export const loader = async ({ request }) => {
     };
 
     try {
+        // Fetch button customization settings for this shop
+        const shopSettings = await getOrCreateShopSettings(shop);
+        const buttonStyle = {
+            btnLabel: shopSettings.btnLabel || "Try On",
+            btnColor: shopSettings.btnColor || "#000000",
+            btnTextColor: shopSettings.btnTextColor || "#ffffff",
+            btnBorderRadius: shopSettings.btnBorderRadius ?? 4,
+        };
+
         // If productId is provided, get specific product config
         if (productId) {
             // Normalize the product ID (handle both GID and numeric formats)
@@ -77,6 +87,7 @@ export const loader = async ({ request }) => {
                     JSON.stringify({
                         enabled: false,
                         productId: normalizedId,
+                        ...buttonStyle,
                     }),
                     { status: 200, headers: rateLimitHeaders }
                 );
@@ -89,6 +100,7 @@ export const loader = async ({ request }) => {
                     selectedImageId: config.selectedImageId,
                     selectedImageUrl: config.selectedImageUrl,
                     productTitle: config.productTitle,
+                    ...buttonStyle,
                 }),
                 { status: 200, headers: rateLimitHeaders }
             );

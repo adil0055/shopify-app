@@ -63,6 +63,10 @@
     data-vto-drawer-width="{{ block.settings.drawer_width }}"
     data-default-image="{{ default_image_url }}"
     data-base-url="{{ base_url }}"
+    data-theme-bg-color="{{ block.settings.button_bg_color | default: '#000000' }}"
+    data-theme-text-color="{{ block.settings.button_text_color | default: '#ffffff' }}"
+    data-theme-radius="{{ block.settings.button_radius | default: 4 }}"
+    data-theme-label="{{ block.settings.button_label | default: 'Try on' | escape }}"
   >
     {{ block.settings.button_label | escape }}
   </a>
@@ -136,6 +140,34 @@
     btn.href = newUrl;
   }
   
+  // Apply button styles from merchant settings saved in the app
+  // Priority: Theme Editor setting (if changed from default) > App/DB setting > code default
+  var DEFAULT_BG = "#000000";
+  var DEFAULT_TEXT = "#ffffff";
+  var DEFAULT_RADIUS = 4;
+  var DEFAULT_LABEL = "Try on";
+
+  function applyButtonStyle(data) {
+    var themeBg = btn.getAttribute("data-theme-bg-color") || DEFAULT_BG;
+    var themeText = btn.getAttribute("data-theme-text-color") || DEFAULT_TEXT;
+    var themeRadius = parseInt(btn.getAttribute("data-theme-radius") || DEFAULT_RADIUS, 10);
+    var themeLabel = btn.getAttribute("data-theme-label") || DEFAULT_LABEL;
+
+    // Only use DB value if theme editor still has the default (merchant hasn't overridden it there)
+    if (themeBg.toLowerCase() === DEFAULT_BG && data.btnColor) {
+      btn.style.backgroundColor = data.btnColor;
+    }
+    if (themeText.toLowerCase() === DEFAULT_TEXT && data.btnTextColor) {
+      btn.style.color = data.btnTextColor;
+    }
+    if (themeRadius === DEFAULT_RADIUS && data.btnBorderRadius !== undefined) {
+      btn.style.borderRadius = data.btnBorderRadius + "px";
+    }
+    if (themeLabel === DEFAULT_LABEL && data.btnLabel) {
+      btn.textContent = data.btnLabel;
+    }
+  }
+
   // Check product configuration from API
   function checkProductConfig() {
     if (!checkConfig || !configApiUrl) {
@@ -154,6 +186,9 @@
         return response.json();
       })
       .then(function(data) {
+        // Always apply button style from merchant settings
+        applyButtonStyle(data);
+
         if (data.enabled) {
           // Product is enabled for VTO
           container.style.display = "";
