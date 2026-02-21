@@ -61,6 +61,13 @@ export default function PublicVto() {
   const [history, setHistory] = useState([]);
   const [cameraError, setCameraError] = useState("");
 
+  // VTO processing state
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [vtoProgress, setVtoProgress] = useState(0);
+  const [vtoError, setVtoError] = useState("");
+  const [resultUrl, setResultUrl] = useState("");
+  const pollRef = useRef(null);
+
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -166,14 +173,119 @@ export default function PublicVto() {
     }, "image/jpeg", 0.92);
   }, [stopCamera]);
 
-  // Clean up camera on unmount
+  // Clean up camera & polling on unmount
   useEffect(() => {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+      }
     };
   }, []);
+
+  // ============ VTO Processing ============
+  const handleTryOn = useCallback(async () => {
+    if (!fileUrl || !productImage) return;
+
+    setIsProcessing(true);
+    setVtoError("");
+    setVtoProgress(5);
+    setResultUrl("");
+
+    try {
+      // Convert blob URL to actual blob
+      const blob = await fetch(fileUrl).then((r) => r.blob());
+
+      const fd = new FormData();
+      fd.append("person_image", blob, "photo.jpg");
+      fd.append("garment_image", productImage);
+      fd.append("shop", shop);
+      fd.append("product_id", productHandle);
+      fd.append("category", "tops");
+      fd.append("session_id", `sess_${Date.now()}`);
+
+      setVtoProgress(10);
+
+      const res = await fetch("/api/vto-process", {
+        method: "POST",
+        body: fd,
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        setVtoError(data.error || "Failed to submit try-on request.");
+        setIsProcessing(false);
+        return;
+      }
+
+      // If result is returned immediately (sync mode)
+      if (data.resultUrl) {
+        setResultUrl(data.resultUrl);
+        setVtoProgress(100);
+        setIsProcessing(false);
+        return;
+      }
+
+      // Async mode: poll for results
+      if (data.jobId) {
+        setVtoProgress(20);
+        pollForResult(data.jobId);
+      } else {
+        setVtoError("No job ID returned. Please try again.");
+        setIsProcessing(false);
+      }
+    } catch (err) {
+      console.error("VTO submit error:", err);
+      setVtoError("Could not connect to the try-on server. Please try again.");
+      setIsProcessing(false);
+    }
+  }, [fileUrl, productImage, shop, productHandle]);
+
+  const pollForResult = useCallback(
+    (jobId) => {
+      let attempts = 0;
+      const maxAttempts = 60; // poll for up to ~3 minutes
+
+      pollRef.current = setInterval(async () => {
+        attempts++;
+
+        if (attempts > maxAttempts) {
+          clearInterval(pollRef.current);
+          setVtoError("Processing took too long. Please try again.");
+          setIsProcessing(false);
+          return;
+        }
+
+        try {
+          const res = await fetch(
+            `/api/vto-status?jobId=${encodeURIComponent(jobId)}&shop=${encodeURIComponent(shop)}`
+          );
+          const data = await res.json();
+
+          if (data.status === "completed" && data.resultUrl) {
+            clearInterval(pollRef.current);
+            setResultUrl(data.resultUrl);
+            setVtoProgress(100);
+            setIsProcessing(false);
+          } else if (data.status === "failed") {
+            clearInterval(pollRef.current);
+            setVtoError(data.error || "Try-on processing failed.");
+            setIsProcessing(false);
+          } else {
+            // Still processing — update progress
+            const progress = data.progress || Math.min(20 + attempts * 2, 90);
+            setVtoProgress(progress);
+          }
+        } catch {
+          // Network error — keep polling, might be transient
+        }
+      }, 3000);
+    },
+    [shop]
+  );
 
   // ============ History panel ============
   const toggleHistory = useCallback(() => {
@@ -330,8 +442,8 @@ export default function PublicVto() {
             </div>
           </div>
 
-          {/* Photo preview */}
-          {fileUrl && (
+          {/* Photo preview & Try On */}
+          {fileUrl && !resultUrl && (
             <div className={styles.previewWrapper}>
               <img
                 className={styles.previewImg}
@@ -342,22 +454,97 @@ export default function PublicVto() {
                 <button
                   type="button"
                   className={styles.primaryBtn}
-                  onClick={() => setFileUrl("")}
+                  onClick={() => {
+                    setFileUrl("");
+                    setVtoError("");
+                    setVtoProgress(0);
+                  }}
+                  disabled={isProcessing}
                 >
                   Remove
                 </button>
                 <button
                   type="button"
                   className={`${styles.primaryBtn} ${styles.tryOnBtn}`}
-                  disabled
-                  title="VTO processing coming soon"
+                  onClick={handleTryOn}
+                  disabled={isProcessing}
                 >
-                  Try On ✨
+                  {isProcessing ? "Processing..." : "Try On ✨"}
                 </button>
               </div>
-              <p className={styles.comingSoonNote}>
-                ⏳ Virtual Try-On processing is coming soon. Stay tuned!
+
+              {/* Progress bar */}
+              {isProcessing && (
+                <div style={{
+                  marginTop: "12px", width: "100%", height: "6px",
+                  backgroundColor: "#e5e7eb", borderRadius: "3px", overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%", width: `${vtoProgress}%`,
+                    backgroundColor: "#6366f1",
+                    transition: "width 0.5s ease",
+                    borderRadius: "3px",
+                  }} />
+                </div>
+              )}
+              {isProcessing && (
+                <p style={{ textAlign: "center", fontSize: "13px", color: "#6b7280", marginTop: "6px" }}>
+                  ✨ AI is generating your try-on... {vtoProgress}%
+                </p>
+              )}
+
+              {/* Error */}
+              {vtoError && (
+                <p style={{
+                  color: "#ef4444", textAlign: "center", fontSize: "13px",
+                  marginTop: "8px", padding: "8px 12px",
+                  backgroundColor: "#fef2f2", borderRadius: "6px",
+                }}>
+                  ⚠️ {vtoError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Result display */}
+          {resultUrl && (
+            <div className={styles.previewWrapper}>
+              <p style={{
+                textAlign: "center", fontWeight: "600", fontSize: "15px",
+                color: "#10b981", marginBottom: "8px",
+              }}>
+                ✅ Your Virtual Try-On is ready!
               </p>
+              <img
+                className={styles.previewImg}
+                src={resultUrl}
+                alt="Virtual Try-On result"
+                style={{ borderRadius: "12px", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}
+              />
+              <div className={styles.previewActions} style={{ marginTop: "12px" }}>
+                <a
+                  href={resultUrl}
+                  download="tryon-result.jpg"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.primaryBtn}
+                  style={{ textDecoration: "none", textAlign: "center" }}
+                >
+                  Download
+                </a>
+                <button
+                  type="button"
+                  className={`${styles.primaryBtn} ${styles.tryOnBtn}`}
+                  onClick={() => {
+                    setResultUrl("");
+                    setFileUrl("");
+                    setVtoProgress(0);
+                    setVtoError("");
+                  }}
+                >
+                  Try Another
+                </button>
+              </div>
             </div>
           )}
 

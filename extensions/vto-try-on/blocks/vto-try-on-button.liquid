@@ -140,30 +140,20 @@
     btn.href = newUrl;
   }
   
-  // Apply button styles from merchant settings saved in the app
-  // Priority: Theme Editor setting (if changed from default) > App/DB setting > code default
-  var DEFAULT_BG = "#000000";
-  var DEFAULT_TEXT = "#ffffff";
-  var DEFAULT_RADIUS = 4;
-  var DEFAULT_LABEL = "Try on";
-
+  // Apply button styles from merchant's app settings (saved in DB).
+  // DB values always win when present. Theme editor CSS is the fallback
+  // when the API is unreachable.
   function applyButtonStyle(data) {
-    var themeBg = btn.getAttribute("data-theme-bg-color") || DEFAULT_BG;
-    var themeText = btn.getAttribute("data-theme-text-color") || DEFAULT_TEXT;
-    var themeRadius = parseInt(btn.getAttribute("data-theme-radius") || DEFAULT_RADIUS, 10);
-    var themeLabel = btn.getAttribute("data-theme-label") || DEFAULT_LABEL;
-
-    // Only use DB value if theme editor still has the default (merchant hasn't overridden it there)
-    if (themeBg.toLowerCase() === DEFAULT_BG && data.btnColor) {
+    if (data.btnColor) {
       btn.style.backgroundColor = data.btnColor;
     }
-    if (themeText.toLowerCase() === DEFAULT_TEXT && data.btnTextColor) {
+    if (data.btnTextColor) {
       btn.style.color = data.btnTextColor;
     }
-    if (themeRadius === DEFAULT_RADIUS && data.btnBorderRadius !== undefined) {
+    if (data.btnBorderRadius !== undefined && data.btnBorderRadius !== null) {
       btn.style.borderRadius = data.btnBorderRadius + "px";
     }
-    if (themeLabel === DEFAULT_LABEL && data.btnLabel) {
+    if (data.btnLabel) {
       btn.textContent = data.btnLabel;
     }
   }
