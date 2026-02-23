@@ -16,7 +16,7 @@ export const loader = async ({ request }) => {
   // 🚨 Protect route: if onboarding is done, go to dashboard
   if (status.isComplete) {
     const url = new URL(request.url);
-    throw redirect(`/app/dashboard${url.search}`);
+    throw redirect(`/app${url.search}`);
   }
 
   // Determine current step based on state
@@ -94,25 +94,36 @@ export default function OnboardingLayout() {
       <s-section>
         <s-box padding="base" borderWidth="base" borderRadius="base">
           <s-stack direction="inline" gap="loose">
-            {steps.map((step, index) => (
-              <s-stack key={step.id} direction="inline" gap="tight" align="center">
-                <s-badge
-                  tone={
-                    step.complete ? "success" :
-                      activeStep === step.id ? "info" :
-                        "subdued"
-                  }
-                >
-                  {step.complete ? "✓" : step.id}
-                </s-badge>
-                <s-text fontWeight={activeStep === step.id ? "semibold" : "regular"}>
-                  {step.label}
-                </s-text>
-                {index < steps.length - 1 && (
-                  <s-text tone="subdued">→</s-text>
-                )}
-              </s-stack>
-            ))}
+            {steps.map((step, index) => {
+              const isDone = step.complete;
+              const isActive = activeStep === step.id;
+              return (
+                <s-stack key={step.id} direction="inline" gap="tight" align="center">
+                  <div style={{
+                    width: "24px",
+                    height: "24px",
+                    borderRadius: "50%",
+                    backgroundColor: isDone ? "var(--p-color-bg-fill-success, #29845a)" : isActive ? "var(--p-color-border-focus, #005bd3)" : "var(--p-color-bg-surface-secondary, #f4f6f8)",
+                    color: isDone || isActive ? "white" : "var(--p-color-text, #202223)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: "bold",
+                    fontSize: "12px",
+                    border: isDone || isActive ? "none" : "1px solid var(--p-color-border, #c9cccf)",
+                    flexShrink: 0
+                  }}>
+                    {isDone ? "✓" : step.id}
+                  </div>
+                  <s-text fontWeight={isActive ? "semibold" : "regular"}>
+                    {step.label}
+                  </s-text>
+                  {index < steps.length - 1 && (
+                    <s-text tone="subdued">→</s-text>
+                  )}
+                </s-stack>
+              );
+            })}
           </s-stack>
         </s-box>
       </s-section>

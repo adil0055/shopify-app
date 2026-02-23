@@ -118,8 +118,12 @@ export const loader = async ({ request }) => {
         session = authResult.session;
         cors = authResult.cors;
     } catch (error) {
+        if (error instanceof Response) {
+            console.error("GET Auth: boundary redirect", error.status);
+            return jsonResponse({ error: "Authentication required" }, 401);
+        }
         console.error("Authenticate.admin failed:", error);
-        throw error;
+        return jsonResponse({ error: "Authentication failed" }, 401);
     }
 
     const url = new URL(request.url);
@@ -193,7 +197,10 @@ export const loader = async ({ request }) => {
 
     } catch (error) {
         console.error("Error in VTO config loader:", error);
-        return cors(jsonResponse({ error: "Internal server error" }, 500));
+        return jsonResponse(
+            { error: "Internal server error", details: error?.message || String(error) },
+            500
+        );
     }
 };
 
@@ -206,8 +213,12 @@ export const action = async ({ request }) => {
         session = authResult.session;
         cors = authResult.cors;
     } catch (error) {
+        if (error instanceof Response) {
+            console.error("POST Auth: boundary redirect", error.status);
+            return jsonResponse({ error: "Authentication required" }, 401);
+        }
         console.error("Action Authenticate.admin failed:", error);
-        throw error;
+        return jsonResponse({ error: "Authentication failed" }, 401);
     }
 
     try {
@@ -297,10 +308,10 @@ export const action = async ({ request }) => {
 
     } catch (error) {
         console.error("Error saving VTO config:", error);
-        return cors(jsonResponse(
-            { error: "Failed to save configuration" },
+        return jsonResponse(
+            { error: "Failed to save configuration", details: error?.message || String(error) },
             500
-        ));
+        );
     }
 };
 
