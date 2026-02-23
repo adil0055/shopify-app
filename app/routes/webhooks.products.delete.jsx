@@ -2,9 +2,15 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 export const action = async ({ request }) => {
-    const { shop, payload, topic } = await authenticate.webhook(request);
+    const { shop, session, payload, topic } = await authenticate.webhook(request);
 
     console.log(`Received ${topic} webhook for ${shop}`);
+
+    // Webhook requests can trigger after an app is uninstalled.
+    // If the app is already uninstalled, the session may be undefined.
+    if (!session) {
+        throw new Response();
+    }
 
     if (!payload?.admin_graphql_api_id) {
         return new Response();

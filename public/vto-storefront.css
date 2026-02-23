@@ -271,7 +271,6 @@
   flex-direction: column;
   height: 100%;
   gap: 16px;
-  min-height: 0;
 }
 
 .previewImg {
@@ -281,7 +280,6 @@
   object-fit: contain;
   background: #f1f5f9;
   min-height: 0;
-  max-height: 40vh;
 }
 
 .previewActions {

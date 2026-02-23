@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useNavigate, useLocation, redirect } from "react-router";
+import { Outlet, useLoaderData, useNavigate, useLocation, redirect, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getOnboardingStatus, getEnabledProductCount, getProductsNeedingImageSelection } from "../models/productVtoConfig.server";
@@ -120,6 +120,10 @@ export default function OnboardingLayout() {
       <Outlet />
     </s-page>
   );
+}
+
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

@@ -1,5 +1,5 @@
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useLoaderData } from "react-router";
+import { useLoaderData, useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getOrCreateShopSettings } from "../models/shopSettings.server";
 import { getOnboardingStatus, getEnabledProductCount, allProductsHaveImages } from "../models/productVtoConfig.server";
@@ -225,6 +225,10 @@ export default function Index() {
       </s-section>
     </s-page>
   );
+}
+
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
 }
 
 export const headers = (headersArgs) => {

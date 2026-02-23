@@ -1,4 +1,4 @@
-import { useLoaderData, useSubmit, useNavigation, useActionData, redirect } from "react-router";
+import { useLoaderData, useSubmit, useNavigation, useActionData, redirect, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import {
@@ -279,6 +279,10 @@ export default function OnboardingComplete() {
             </s-section>
         </>
     );
+}
+
+export function ErrorBoundary() {
+    return boundary.error(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

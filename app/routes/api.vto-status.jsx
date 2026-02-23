@@ -1,12 +1,5 @@
-/**
- * VTO Job Status Polling Proxy
- *
- * Frontend polls this endpoint with a jobId.
- * We forward to the external VTO backend's GET /jobs/{job_id}.
- * When status is SUCCESS, we also log the completion.
- */
-
 import prisma from "../db.server";
+import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
     const corsHeaders = {
@@ -20,9 +13,28 @@ export const loader = async ({ request }) => {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
 
+    // App Proxy Authentication
+    let session;
+    try {
+        const authResult = await authenticate.public.appProxy(request);
+        session = authResult.session;
+    } catch (e) {
+        return new Response(
+            JSON.stringify({ ok: false, error: "Unauthorized: Invalid signature" }),
+            { status: 401, headers: corsHeaders }
+        );
+    }
+
+    if (!session) {
+        return new Response(
+            JSON.stringify({ ok: false, error: "Unauthorized: Missing session" }),
+            { status: 401, headers: corsHeaders }
+        );
+    }
+    const shop = session.shop;
+
     const url = new URL(request.url);
     const jobId = url.searchParams.get("jobId");
-    const shop = url.searchParams.get("shop");
 
     if (!jobId) {
         return new Response(

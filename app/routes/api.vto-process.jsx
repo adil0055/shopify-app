@@ -2,6 +2,7 @@ import prisma from "../db.server";
 import { getOrCreateShopSettings } from "../models/shopSettings.server";
 import { getPlanLimit } from "../config/planLimits";
 import { randomUUID } from "crypto";
+import { authenticate } from "../shopify.server";
 
 /**
  * VTO Process Proxy
@@ -24,19 +25,38 @@ export const action = async ({ request }) => {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
 
+    // App Proxy Authentication
+    let session;
+    try {
+        const authResult = await authenticate.public.appProxy(request);
+        session = authResult.session;
+    } catch (e) {
+        return new Response(
+            JSON.stringify({ ok: false, error: "Unauthorized: Invalid signature" }),
+            { status: 401, headers: corsHeaders }
+        );
+    }
+
+    if (!session) {
+        return new Response(
+            JSON.stringify({ ok: false, error: "Unauthorized: Missing session" }),
+            { status: 401, headers: corsHeaders }
+        );
+    }
+    const shop = session.shop;
+
     try {
         const formData = await request.formData();
         const personImage = formData.get("person_image");       // File blob
         const garmentImageUrl = formData.get("garment_image");  // URL string
-        const shop = formData.get("shop");                      // myshopify domain
         const productId = formData.get("product_id");           // Shopify GID
         const category = formData.get("category") || "tops";    // garment category
         const customerSessionId = formData.get("session_id") || "anon";
 
         // ── Validate ──
-        if (!personImage || !garmentImageUrl || !shop) {
+        if (!personImage || !garmentImageUrl) {
             return new Response(
-                JSON.stringify({ ok: false, error: "Missing required fields: person_image, garment_image, shop" }),
+                JSON.stringify({ ok: false, error: "Missing required fields: person_image, garment_image" }),
                 { status: 400, headers: corsHeaders }
             );
         }

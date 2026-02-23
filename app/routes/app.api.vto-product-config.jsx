@@ -1,4 +1,6 @@
+import { useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getProductConfig, upsertProductConfig } from "../models/productVtoConfig.server";
 
 /**
@@ -7,21 +9,14 @@ import { getProductConfig, upsertProductConfig } from "../models/productVtoConfi
  * GET: Fetch existing VTO config + product images for a product
  * POST: Save VTO config for a product
  *
- * Auth: Uses Shopify session token from the admin extension
+ * Auth: Uses authenticate.admin() with cors() for cross-origin admin extension requests.
+ * Docs: https://shopify.dev/docs/api/shopify-app-remix#authenticating-cross-origin-admin-requests
  */
 
 function jsonResponse(data, status) {
     return new Response(JSON.stringify(data), {
         status,
         headers: { "Content-Type": "application/json" },
-    });
-}
-
-function withCors(response) {
-    return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
     });
 }
 
@@ -115,17 +110,15 @@ async function fetchImageById(admin, imageId) {
 }
 
 export const loader = async ({ request }) => {
-    let admin;
-    let session;
+    let admin, session, cors;
     try {
+        // cors() is required for cross-origin requests from admin extensions
         const authResult = await authenticate.admin(request);
         admin = authResult.admin;
         session = authResult.session;
+        cors = authResult.cors;
     } catch (error) {
         console.error("Authenticate.admin failed:", error);
-        if (error instanceof Response) {
-            return withCors(error);
-        }
         throw error;
     }
 
@@ -153,7 +146,7 @@ export const loader = async ({ request }) => {
         const dbConfig = await getProductConfig(session.shop, normalizedId);
 
         if (dbConfig) {
-            return jsonResponse(
+            return cors(jsonResponse(
                 {
                     enabled: dbConfig.isEnabled,
                     productId: normalizedId,
@@ -163,7 +156,7 @@ export const loader = async ({ request }) => {
                     images: product?.images?.nodes || []
                 },
                 200
-            );
+            ));
         }
 
         // 2. Fallback to Metafields if no DB record exists
@@ -186,7 +179,7 @@ export const loader = async ({ request }) => {
         }
         const selectedImageUrl = selectedImage ? selectedImage.url : "";
 
-        return jsonResponse(
+        return cors(jsonResponse(
             {
                 enabled: isEnabled,
                 productId: normalizedId,
@@ -196,26 +189,24 @@ export const loader = async ({ request }) => {
                 images,
             },
             200
-        );
+        ));
 
     } catch (error) {
         console.error("Error in VTO config loader:", error);
-        return jsonResponse({ error: "Internal server error" }, 500);
+        return cors(jsonResponse({ error: "Internal server error" }, 500));
     }
 };
 
 export const action = async ({ request }) => {
-    let admin;
-    let session;
+    let admin, session, cors;
     try {
+        // cors() is required for cross-origin requests from admin extensions
         const authResult = await authenticate.admin(request);
         admin = authResult.admin;
         session = authResult.session;
+        cors = authResult.cors;
     } catch (error) {
         console.error("Action Authenticate.admin failed:", error);
-        if (error instanceof Response) {
-            return withCors(error);
-        }
         throw error;
     }
 
@@ -299,17 +290,22 @@ export const action = async ({ request }) => {
             isEnabled: Boolean(isEnabled)
         });
 
-        return jsonResponse(
+        return cors(jsonResponse(
             { success: true, message: "VTO configuration saved" },
             200
-        );
+        ));
 
     } catch (error) {
         console.error("Error saving VTO config:", error);
-        return jsonResponse(
+        return cors(jsonResponse(
             { error: "Failed to save configuration" },
             500
-        );
+        ));
     }
 };
 
+export function ErrorBoundary() {
+    return boundary.error(useRouteError());
+}
+
+export const headers = (headersArgs) => boundary.headers(headersArgs);
