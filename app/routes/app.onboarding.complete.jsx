@@ -21,11 +21,15 @@ export const loader = async ({ request }) => {
 
     // Redirect back if setup is incomplete
     if (enabledProducts.length === 0) {
-        return redirect("/app/onboarding/products");
+        const url = new URL(request.url);
+        const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+        return redirect(`/app/onboarding/products${searchParams}`);
     }
 
     if (needsImages.length > 0) {
-        return redirect("/app/onboarding/images");
+        const url = new URL(request.url);
+        const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+        return redirect(`/app/onboarding/images${searchParams}`);
     }
 
     const storeHandle = shopDomainToStoreHandle(shop);
@@ -196,13 +200,7 @@ export default function OnboardingComplete() {
                                     Go to the Theme Editor and add the "VTO Try On Button" block to your product template.
                                 </s-paragraph>
                             </s-list-item>
-                            <s-list-item>
-                                <strong>Configure your external VTO URL</strong>
-                                <s-paragraph>
-                                    Set the URL where customers will be redirected for the try-on experience in{" "}
-                                    <s-link href="/app/settings">Settings</s-link>.
-                                </s-paragraph>
-                            </s-list-item>
+
                             <s-list-item>
                                 <strong>Test on your storefront</strong>
                                 <s-paragraph>
@@ -256,9 +254,6 @@ export default function OnboardingComplete() {
                         </s-link>
                     )}
 
-                    <s-link href="/app/settings">
-                        <s-button>Configure VTO URL</s-button>
-                    </s-link>
 
                     <s-link href="/app">
                         <s-button variant="plain">Back to Dashboard</s-button>

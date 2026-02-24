@@ -12,20 +12,23 @@ export const loader = async ({ request }) => {
         getProductsNeedingImageSelection(shop),
     ]);
 
+    const url = new URL(request.url);
+    const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+
     // Redirect to appropriate step
     if (status.isComplete) {
-        return redirect("/app/onboarding/complete");
+        return redirect(`/app/onboarding/complete${searchParams}`);
     }
 
     if (enabledCount > 0 && needsImages.length === 0) {
-        return redirect("/app/onboarding/complete");
+        return redirect(`/app/onboarding/complete${searchParams}`);
     }
 
     if (enabledCount > 0) {
-        return redirect("/app/onboarding/images");
+        return redirect(`/app/onboarding/images${searchParams}`);
     }
 
-    return redirect("/app/onboarding/plan");
+    return redirect(`/app/onboarding/plan${searchParams}`);
 };
 
 export default function OnboardingIndex() {

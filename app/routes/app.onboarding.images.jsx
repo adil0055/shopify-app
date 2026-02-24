@@ -45,7 +45,8 @@ export const loader = async ({ request }) => {
 
     if (enabledProducts.length === 0) {
         // No products to configure, go back to product selection
-        return redirect("/app/onboarding/products");
+        const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+        return redirect(`/app/onboarding/products${searchParams}`);
     }
 
     // Get products needing image selection
@@ -128,7 +129,10 @@ export const action = async ({ request }) => {
 
             if (needsImages.length > 0) {
                 // Navigate to next product needing an image
-                return redirect(`/app/onboarding/images?product=${encodeURIComponent(needsImages[0].productId)}`);
+                const url = new URL(request.url);
+                const searchParams = url.searchParams;
+                searchParams.set("product", needsImages[0].productId);
+                return redirect(`/app/onboarding/images?${searchParams.toString()}`);
             }
 
             return { success: true, message: "Image selected successfully!" };

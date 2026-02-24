@@ -23,7 +23,9 @@ export const action = async ({ request }) => {
 
     await updateButtonCustomization(session.shop, updates);
 
-    return redirect("/app/onboarding/products");
+    const url = new URL(request.url);
+    const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+    return redirect(`/app/onboarding/products${searchParams}`);
 };
 
 export default function OnboardingCustomize() {

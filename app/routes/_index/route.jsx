@@ -17,7 +17,7 @@ export const loader = async ({ request }) => {
     throw redirect(`/vto?${url.searchParams.toString()}`);
   }
 
-  if (url.searchParams.get("shop")) {
+  if (url.searchParams.get("shop") || url.searchParams.get("id_token")) {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 

@@ -19,7 +19,9 @@ export const action = async ({ request }) => {
     }
 
     // Go to next step
-    return redirect("/app/onboarding/customize");
+    const url = new URL(request.url);
+    const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+    return redirect(`/app/onboarding/customize${searchParams}`);
 };
 
 export default function OnboardingPlan() {

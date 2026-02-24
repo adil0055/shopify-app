@@ -26,7 +26,9 @@ export const loader = async ({ request }) => {
 
   // Protect dashboard: require onboarding to be completed
   if (!onboardingStatus.isComplete) {
-    throw redirect("/app/onboarding");
+    const url = new URL(request.url);
+    const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+    throw redirect(`/app/onboarding${searchParams}`);
   }
 
   const storeHandle = shopDomainToStoreHandle(shop);
