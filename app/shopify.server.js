@@ -17,10 +17,7 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   isEmbeddedApp: true,
-  future: {
-    expiringOfflineAccessTokens: true,
-    unstable_newEmbeddedAuthStrategy: true,
-  },
+  future: {},
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
