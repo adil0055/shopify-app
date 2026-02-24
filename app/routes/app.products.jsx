@@ -77,10 +77,39 @@ const COLLECTION_PRODUCTS_QUERY = `
   }
 `;
 
+const PRODUCT_IMAGES_QUERY = `
+  query getProductImages($id: ID!) {
+    product(id: $id) {
+      id
+      title
+      images(first: 50) {
+        nodes {
+          id
+          url(transform: { maxWidth: 400, maxHeight: 400 })
+          altText
+        }
+      }
+    }
+  }
+`;
+
 export const loader = async ({ request }) => {
     const { session, admin } = await authenticate.admin(request);
     const shop = session.shop;
     const url = new URL(request.url);
+
+    // On-demand: fetch images for a specific product when modal opens
+    const fetchImagesFor = url.searchParams.get("fetchImagesFor");
+    if (fetchImagesFor) {
+        const imgResp = await admin.graphql(PRODUCT_IMAGES_QUERY, { variables: { id: fetchImagesFor } });
+        const imgData = await imgResp.json();
+        const product = imgData.data?.product;
+        return {
+            imagesOnly: true,
+            productId: fetchImagesFor,
+            images: product?.images?.nodes || []
+        };
+    }
 
     // Params for product pagination
     const searchQuery = url.searchParams.get("q") || "";
@@ -255,9 +284,27 @@ export default function ManageProducts() {
     };
 
     const [selectedProductForImage, setSelectedProductForImage] = useState(null);
+    const [loadingImages, setLoadingImages] = useState(false);
 
-    const handleImageSelect = (p) => {
-        setSelectedProductForImage(p);
+    const handleImageSelect = async (p) => {
+        // If we already have this product's images loaded, open immediately
+        if (p.images && p.images.length > 0) {
+            setSelectedProductForImage(p);
+            return;
+        }
+        // Otherwise fetch images on-demand for this specific product
+        setLoadingImages(true);
+        try {
+            const resp = await fetch(`/app/products?fetchImagesFor=${encodeURIComponent(p.id)}`, {
+                headers: { Accept: "application/json" }
+            });
+            const data = await resp.json();
+            setSelectedProductForImage({ ...p, images: data.images || [] });
+        } catch {
+            setSelectedProductForImage({ ...p, images: [] });
+        } finally {
+            setLoadingImages(false);
+        }
     };
 
     const handleSaveImage = (p, image) => {
@@ -273,6 +320,15 @@ export default function ManageProducts() {
     return (
         <s-page heading="Manage Products & Collections" backAction="/app">
             {/* Image Selection Modal Overlay */}
+            {loadingImages && (
+                <div style={{
+                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                    background: "rgba(0,0,0,0.4)", zIndex: 1000,
+                    display: "flex", alignItems: "center", justifyContent: "center"
+                }}>
+                    <s-spinner />
+                </div>
+            )}
             {selectedProductForImage && (
                 <div style={{
                     position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
@@ -442,16 +498,8 @@ export default function ManageProducts() {
                                             But we can still allow navigation. */}
                                         <s-button
                                             variant="secondary"
-                                            onClick={() => {
-                                                // If we have nodes available, we can open the modal. Otherwise fallback to the products tab.
-                                                if (p.images && p.images.length > 0) {
-                                                    handleImageSelect(p);
-                                                } else {
-                                                    setActiveTab("products");
-                                                    setLocalSearch(p.title);
-                                                    setTimeout(() => handleSearch(), 100);
-                                                }
-                                            }}
+                                            disabled={loadingImages}
+                                            onClick={() => handleImageSelect(p)}
                                         >
                                             Change Image
                                         </s-button>

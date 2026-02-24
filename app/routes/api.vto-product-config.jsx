@@ -42,7 +42,8 @@ async function verifyIdToken(request) {
     const secret = new TextEncoder().encode(process.env.SHOPIFY_API_SECRET);
 
     const { payload } = await jwtVerify(token, secret, {
-        algorithms: ["HS256"], // Critical for security: force HS256
+        algorithms: ["HS256"],
+        clockTolerance: 30, // 30-second tolerance for clock skew between Shopify servers and local machine
     });
 
     // Extract shop from the 'dest' claim (e.g. "https://my-store.myshopify.com")
@@ -76,8 +77,6 @@ async function fetchProductWithImages(admin, productId) {
                 images(first: 50) {
                     nodes { id url altText }
                 }
-                metafieldVtoEnabled: metafield(namespace: "vton", key: "enabled") { value }
-                metafieldVtoImageId: metafield(namespace: "vton", key: "image_id") { value }
             }
         }`,
         { variables: { id: productId } }
@@ -169,26 +168,17 @@ export const loader = async ({ request }) => {
             }, 200);
         }
 
-        const images = product.images?.nodes || [];
-        const isEnabled = product.metafieldVtoEnabled?.value === "true";
-        const selectedImageId = product.metafieldVtoImageId?.value || "";
-
-        let selectedImage = images.find(img => img.id === selectedImageId);
-        if (!selectedImage && selectedImageId) {
-            const resolved = await fetchImageById(admin, selectedImageId);
-            if (resolved?.url) {
-                selectedImage = { id: selectedImageId, url: resolved.url, altText: resolved.altText || "" };
-                images.unshift(selectedImage);
-            }
-        }
-
+        // No DB record means this product has never been explicitly configured via our system.
+        // Always return enabled: false — do NOT fall back to metafields.
+        // Metafields can be stale (e.g. product was disabled from manage page which only clears the DB,
+        // not the metafield), so trusting them would show a false "enabled" tick.
         return jsonResponse({
-            enabled: isEnabled,
+            enabled: false,
             productId: normalizedId,
-            selectedImageId,
-            selectedImageUrl: selectedImage?.url || "",
+            selectedImageId: "",
+            selectedImageUrl: "",
             productTitle: product.title || "",
-            images,
+            images: product.images?.nodes || [],
         }, 200);
 
     } catch (error) {
