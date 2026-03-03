@@ -1,7 +1,11 @@
-import { redirect, useLoaderData, useSubmit, useNavigation, useRouteError } from "react-router";
+import { redirect, useLoaderData, useSubmit, useNavigation, useRouteError, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getOrCreateShopSettings, updatePlanTier } from "../models/shopSettings.server";
+import {
+    Page, Layout, Card, BlockStack, InlineStack, InlineGrid,
+    Text, Badge, Button, Box, Divider
+} from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
     const { session } = await authenticate.admin(request);
@@ -18,7 +22,6 @@ export const action = async ({ request }) => {
         await updatePlanTier(session.shop, planTier);
     }
 
-    // Go to next step
     const url = new URL(request.url);
     const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
     return redirect(`/app/onboarding/customize${searchParams}`);
@@ -36,80 +39,97 @@ export default function OnboardingPlan() {
         {
             id: "FREE",
             name: "Free Tier",
-            price: "$0/mo",
-            features: ["Up to 10 products", "Standard Support", "Basic Analytics"],
+            price: "$0",
+            period: "/mo",
+            features: ["Up to 10 products", "Standard support", "Basic analytics"],
         },
         {
             id: "PRO",
             name: "Pro Plan",
-            price: "$29/mo",
-            features: ["Unlimited products", "Priority Support", "Advanced Analytics", "Remove Branding"],
+            price: "$29",
+            period: "/mo",
+            features: ["Unlimited products", "Priority support", "Advanced analytics", "Remove branding"],
             recommended: true,
         },
         {
             id: "ENTERPRISE",
             name: "Enterprise",
-            price: "Contact Us",
-            features: ["Custom Integration", "Dedicated Account Manager", "SLA"],
+            price: "Custom",
+            period: "",
+            features: ["Custom integration", "Dedicated account manager", "SLA guarantee"],
         },
     ];
 
+    const handleSelect = (planId) => {
+        if (isSubmitting) return;
+        const formData = new FormData();
+        formData.append("planTier", planId);
+        submit(formData, { method: "post" });
+    };
+
     return (
-        <s-section>
-            <s-box padding="loose" borderWidth="base" borderRadius="base">
-                <s-stack direction="block" gap="loose">
-                    <s-heading>Choose your plan</s-heading>
-                    <s-text>Select a plan that fits your business needs. You can change this later.</s-text>
+        <Card padding="600">
+            <BlockStack gap="600">
+                <BlockStack gap="200">
+                    <Text variant="headingLg" as="h2">Choose your plan</Text>
+                    <Text tone="subdued" as="p">Select a plan that fits your business needs. You can change this later.</Text>
+                </BlockStack>
 
-                    <s-grid columns={{ xs: 1, sm: 3 }} gap="base">
-                        {plans.map((plan) => (
-                            <s-box
+                <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
+                    {plans.map((plan) => {
+                        const isSelected = currentPlan === plan.id;
+                        const isLoading = isSubmitting && submittingPlanId === plan.id;
+
+                        return (
+                            <Box
                                 key={plan.id}
-                                padding="base"
-                                borderWidth="base"
-                                borderRadius="base"
-                                borderColor={currentPlan === plan.id ? "emphasis" : "base"}
-                                background={currentPlan === plan.id ? "surface-highlight" : "surface"}
-                                shadow={currentPlan === plan.id ? "card" : "none"}
+                                borderWidth="025"
+                                borderColor={isSelected ? "border-success" : "border"}
+                                borderRadius="300"
+                                padding="500"
+                                background={isSelected ? "bg-surface-success" : "bg-surface"}
                             >
-                                <s-stack direction="block" gap="base" align="center">
-                                    {plan.recommended && <s-badge tone="success">Recommended</s-badge>}
-                                    <s-heading variant="headingMd">{plan.name}</s-heading>
-                                    <s-text variant="headingLg">{plan.price}</s-text>
+                                <BlockStack gap="400">
+                                    <BlockStack gap="200">
+                                        {plan.recommended && (
+                                            <Badge tone="success">Recommended</Badge>
+                                        )}
+                                        <Text variant="headingMd" as="h3" fontWeight="bold">{plan.name}</Text>
+                                        <InlineStack gap="100" blockAlign="baseline">
+                                            <Text variant="headingXl" as="p" fontWeight="bold">{plan.price}</Text>
+                                            {plan.period && <Text tone="subdued" as="p">{plan.period}</Text>}
+                                        </InlineStack>
+                                    </BlockStack>
 
-                                    <s-box paddingBlockStart="base" paddingBlockEnd="base">
-                                        <s-stack direction="block" gap="tight">
-                                            {plan.features.map((feature, i) => (
-                                                <s-text key={i} tone="subdued" alignment="center">• {feature}</s-text>
-                                            ))}
-                                        </s-stack>
-                                    </s-box>
+                                    <Divider />
 
-                                    <div
-                                        onClick={() => {
-                                            if (isSubmitting) return;
-                                            const formData = new FormData();
-                                            formData.append("planTier", plan.id);
-                                            submit(formData, { method: "post" });
-                                        }}
-                                        style={{ width: "100%" }}
-                                    >
-                                        <s-button
-                                            variant={currentPlan === plan.id ? "primary" : "secondary"}
+                                    <BlockStack gap="200">
+                                        {plan.features.map((feature, i) => (
+                                            <InlineStack key={i} gap="200" blockAlign="center">
+                                                <Text tone="success" as="span">✓</Text>
+                                                <Text tone="subdued" as="span">{feature}</Text>
+                                            </InlineStack>
+                                        ))}
+                                    </BlockStack>
+
+                                    <Box paddingBlockStart="200">
+                                        <Button
+                                            variant={isSelected ? "primary" : "secondary"}
                                             fullWidth
                                             disabled={isSubmitting}
-                                            loading={isSubmitting && submittingPlanId === plan.id}
+                                            loading={isLoading}
+                                            onClick={() => handleSelect(plan.id)}
                                         >
-                                            {currentPlan === plan.id ? "Selected" : "Choose " + plan.name}
-                                        </s-button>
-                                    </div>
-                                </s-stack>
-                            </s-box>
-                        ))}
-                    </s-grid>
-                </s-stack>
-            </s-box>
-        </s-section>
+                                            {isSelected ? "✓ Selected" : `Choose ${plan.name}`}
+                                        </Button>
+                                    </Box>
+                                </BlockStack>
+                            </Box>
+                        );
+                    })}
+                </InlineGrid>
+            </BlockStack>
+        </Card>
     );
 }
 

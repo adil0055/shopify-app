@@ -5,6 +5,9 @@ handle = "vto-product-config"
 type = "ui_extension"
 uid = "19de5263-a122-38ea-3890-7d6d90241a89db2041f0"
 
+[extensions.capabilities]
+network_access = true
+
 [[extensions.targeting]]
 module = "./src/BlockExtension.jsx"
 target = "admin.product-details.block.render"

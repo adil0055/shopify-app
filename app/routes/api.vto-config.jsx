@@ -70,6 +70,8 @@ export const loader = async ({ request }) => {
             btnColor: shopSettings.btnColor || "#000000",
             btnTextColor: shopSettings.btnTextColor || "#ffffff",
             btnBorderRadius: shopSettings.btnBorderRadius ?? 4,
+            allowGuestAccess: shopSettings.allowGuestAccess ?? false,
+            appLanguage: shopSettings.appLanguage || "shopify_default",
         };
 
         // If productId is provided, get specific product config

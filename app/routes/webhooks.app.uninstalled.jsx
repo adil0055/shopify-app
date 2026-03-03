@@ -6,39 +6,49 @@ export const action = async ({ request }) => {
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
-  // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // Clean up ALL shop data to comply with Shopify's data protection requirements
-  // and prevent orphaned records.
   if (shop) {
+    // 1. Notify External Python Backend to Delete Images and Tokens
+    try {
+      const VTO_API_BASE = process.env.VTO_API_BASE_URL;
+      const VTO_CLIENT_ID = process.env.VTO_CLIENT_ID;
+      const VTO_CLIENT_SECRET = process.env.VTO_CLIENT_SECRET;
+
+      if (VTO_API_BASE && VTO_CLIENT_ID && VTO_CLIENT_SECRET) {
+        const response = await fetch(`${VTO_API_BASE}/api/v1/external/merchants/${shop}`, {
+          method: "DELETE",
+          headers: {
+            "X-Client-ID": VTO_CLIENT_ID,
+            "X-Client-Secret": VTO_CLIENT_SECRET,
+          }
+        });
+
+        if (!response.ok) {
+          console.error(`External VTO server failed to respond beautifully to uninstallation. Status: ${response.status}`);
+        } else {
+          console.log(`External Python DB wiped all data/images successfully for ${shop}`);
+        }
+      }
+    } catch (err) {
+      console.error(`Critical Failure deleting cloud metadata for ${shop}:`, err);
+    }
+
     try {
       await db.$transaction([
-        // 1. Remove all product VTO configurations
-        db.productVtoConfig.deleteMany({ where: { shop } }),
-
-        // 2. Remove shop settings
-        db.shopSettings.deleteMany({ where: { shop } }),
-
-        // 3. Remove onboarding status
-        db.onboardingStatus.deleteMany({ where: { shop } }),
-
-        // 4. Remove all API call logs for this shop
+        // 1. Remove all API call logs for this shop
         db.apiCallLog.deleteMany({ where: { shop } }),
 
-        // 5. Remove sessions (last)
+        // 2. Remove sessions (last)
         db.session.deleteMany({ where: { shop } }),
       ]);
 
-      console.log(`Cleaned up all data for uninstalled shop: ${shop}`);
+      console.log(`Cleaned up local DB data for uninstalled shop: ${shop}`);
     } catch (error) {
-      console.error(`Error cleaning up data for ${shop}:`, error);
+      console.error(`Error cleaning up DB for ${shop}:`, error);
       // Still try to delete sessions even if other cleanup fails
       try {
         await db.session.deleteMany({ where: { shop } });
       } catch (sessionError) {
-        console.error(
-          `Failed to delete sessions for ${shop}:`,
-          sessionError
-        );
+        console.error(`Failed to delete sessions for ${shop}:`, sessionError);
       }
     }
   }

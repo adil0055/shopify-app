@@ -2,6 +2,7 @@ import { Outlet, useLoaderData, useNavigate, useLocation, redirect, useRouteErro
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getOnboardingStatus, getEnabledProductCount, getProductsNeedingImageSelection } from "../models/productVtoConfig.server";
+import { Page, Layout, Card, InlineStack, Text, Box } from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -37,6 +38,8 @@ export const loader = async ({ request }) => {
     currentStep,
   };
 };
+
+
 
 export default function OnboardingLayout() {
   const { status, enabledCount, needsImagesCount, currentStep } = useLoaderData();
@@ -90,46 +93,69 @@ export default function OnboardingLayout() {
   ];
 
   return (
-    <s-page heading="Try-On Setup">
-      <s-section>
-        <s-box padding="base" borderWidth="base" borderRadius="base">
-          <s-stack direction="inline" gap="loose">
-            {steps.map((step, index) => {
-              const isDone = step.complete;
-              const isActive = activeStep === step.id;
-              return (
-                <s-stack key={step.id} direction="inline" gap="tight" align="center">
-                  <div style={{
-                    width: "24px",
-                    height: "24px",
-                    borderRadius: "50%",
-                    backgroundColor: isDone ? "var(--p-color-bg-fill-success, #29845a)" : isActive ? "var(--p-color-border-focus, #005bd3)" : "var(--p-color-bg-surface-secondary, #f4f6f8)",
-                    color: isDone || isActive ? "white" : "var(--p-color-text, #202223)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                    fontSize: "12px",
-                    border: isDone || isActive ? "none" : "1px solid var(--p-color-border, #c9cccf)",
-                    flexShrink: 0
-                  }}>
-                    {isDone ? "✓" : step.id}
-                  </div>
-                  <s-text fontWeight={isActive ? "semibold" : "regular"}>
-                    {step.label}
-                  </s-text>
-                  {index < steps.length - 1 && (
-                    <s-text tone="subdued">→</s-text>
-                  )}
-                </s-stack>
-              );
-            })}
-          </s-stack>
-        </s-box>
-      </s-section>
+    <Page title="Try-On Setup">
+      <Layout>
+        <Layout.Section>
+          <Box paddingBlockEnd="400">
+            <Card padding="400">
+              <InlineStack gap="400" wrap>
+                {steps.map((step, index) => {
+                  const isDone = step.complete;
+                  const isActive = activeStep === step.id;
 
-      <Outlet />
-    </s-page>
+                  // Calculate colors based on Polaris design tokens
+                  let bgColor = "var(--p-color-bg-surface-secondary)";
+                  let textColor = "var(--p-color-text)";
+                  let borderColor = "var(--p-color-border)";
+
+                  if (isDone) {
+                    bgColor = "var(--p-color-bg-fill-success)";
+                    textColor = "var(--p-color-text-inverse)";
+                    borderColor = "transparent";
+                  } else if (isActive) {
+                    bgColor = "var(--p-color-bg-fill-info)";
+                    textColor = "var(--p-color-text-inverse)";
+                    borderColor = "transparent";
+                  }
+
+                  return (
+                    <InlineStack key={step.id} gap="200" align="center" blockAlign="center">
+                      <div style={{
+                        width: "24px",
+                        height: "24px",
+                        borderRadius: "50%",
+                        backgroundColor: bgColor,
+                        color: textColor,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: "bold",
+                        fontSize: "12px",
+                        border: `1px solid ${borderColor}`,
+                        flexShrink: 0
+                      }}>
+                        {isDone ? "✓" : step.id}
+                      </div>
+                      <Text fontWeight={isActive ? "bold" : "regular"} tone={(!isDone && !isActive) ? "subdued" : "base"}>
+                        {step.label}
+                      </Text>
+                      {index < steps.length - 1 && (
+                        <Box paddingInlineStart="200" paddingInlineEnd="200">
+                          <Text tone="subdued">→</Text>
+                        </Box>
+                      )}
+                    </InlineStack>
+                  );
+                })}
+              </InlineStack>
+            </Card>
+          </Box>
+        </Layout.Section>
+        <Layout.Section>
+          <Outlet />
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }
 

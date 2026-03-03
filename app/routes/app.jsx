@@ -2,6 +2,11 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+import enTranslations from "@shopify/polaris/locales/en.json";
+
+export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }) => {
   // authenticate.admin() handles session validation, token refresh, and
@@ -19,19 +24,18 @@ export default function App() {
   const { apiKey } = useLoaderData();
 
   return (
-    <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-        <s-link href="/app">Dashboard</s-link>
-
-        <s-link href="/app/settings">Settings</s-link>
-        <s-divider></s-divider>
-        <s-link href="/app/analytics">Analytics</s-link>
-        <s-link href="/app/logs">Logs</s-link>
-        <s-divider></s-divider>
-        <s-link href="/app/plan">Plan</s-link>
-      </s-app-nav>
-      <Outlet />
-    </AppProvider>
+    <PolarisAppProvider i18n={enTranslations}>
+      <AppProvider embedded apiKey={apiKey}>
+        <ui-nav-menu>
+          <a href="/app" rel="home">Dashboard</a>
+          <a href="/app/settings">Settings</a>
+          <a href="/app/analytics">Analytics</a>
+          <a href="/app/logs">Logs</a>
+          <a href="/app/plan">Plan</a>
+        </ui-nav-menu>
+        <Outlet />
+      </AppProvider>
+    </PolarisAppProvider>
   );
 }
 

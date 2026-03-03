@@ -50,7 +50,7 @@
   style="{% if check_config %}display: none;{% endif %}"
 >
   {% capture redirect_url -%}
-    {{ base_url }}{{ separator }}shop={{ shop.permanent_domain | url_encode }}&product_handle={{ product.handle | url_encode }}&variant_id={{ product.selected_or_first_available_variant.id }}&title={{ product.title | url_encode }}&image={{ default_image_url | url_encode }}&source=shopify_tae
+    {{ base_url }}{{ separator }}shop={{ shop.permanent_domain | url_encode }}&product_handle={{ product.handle | url_encode }}&variant_id={{ product.selected_or_first_available_variant.id }}&title={{ product.title | url_encode }}&image={{ default_image_url | url_encode }}&customer_id={{ customer.id }}&has_image={{ customer.metafields.vto.has_image | default: 'false' }}&source=shopify_tae
   {%- endcapture %}
   
   <a
@@ -123,9 +123,7 @@
   var shopDomain = "{{ shop.permanent_domain }}";
   
   // Function to update button URL with configured image
-  function updateButtonUrl(configuredImageUrl) {
-    if (!configuredImageUrl) return;
-    
+  function updateButtonUrl(configuredImageUrl, allowGuestAccess, appLanguage) {
     var baseUrl = btn.getAttribute("data-base-url");
     var separator = baseUrl.indexOf("?") !== -1 ? "&" : "?";
     
@@ -134,7 +132,11 @@
       "&product_handle=" + encodeURIComponent("{{ product.handle }}") +
       "&variant_id={{ product.selected_or_first_available_variant.id }}" +
       "&title=" + encodeURIComponent("{{ product.title | escape }}") +
-      "&image=" + encodeURIComponent(configuredImageUrl) +
+      "&image=" + encodeURIComponent(configuredImageUrl || "") +
+      "&customer_id={{ customer.id }}" + 
+      "&has_image={{ customer.metafields.vto.has_image | default: 'false' }}" +
+      "&allow_guest=" + (allowGuestAccess ? "true" : "false") +
+      "&lang=" + encodeURIComponent(appLanguage || "shopify_default") +
       "&source=shopify_tae";
     
     btn.href = newUrl;
@@ -183,10 +185,8 @@
           // Product is enabled for VTO
           container.style.display = "";
           
-          // Update image URL if configured
-          if (data.selectedImageUrl) {
-            updateButtonUrl(data.selectedImageUrl);
-          }
+          // Update image URL if configured, pass allowGuestAccess and language
+          updateButtonUrl(data.selectedImageUrl || "", data.allowGuestAccess, data.appLanguage);
         } else {
           // Product is not enabled, keep button hidden
           container.style.display = "none";

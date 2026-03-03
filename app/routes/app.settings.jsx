@@ -36,6 +36,7 @@ export const action = async ({ request }) => {
   const emailCollectionStep = parseInt(form.get("emailCollectionStep") || "2", 10);
   const maxGenerationsPerWeek = parseInt(form.get("maxGenerationsPerWeek") || "6", 10);
   const appLanguage = form.get("appLanguage") || "shopify_default";
+  const allowGuestAccess = form.get("allowGuestAccess") === "true";
 
   await updateShopSettings(session.shop, {
     vtoBaseUrl: "",
@@ -44,6 +45,7 @@ export const action = async ({ request }) => {
     maxGenerationsPerWeek,
     dataRetentionDays: 7, // keep existing, just not exposed in UI
     appLanguage,
+    allowGuestAccess,
   });
 
   return new Response(JSON.stringify({ ok: true, intent: "save_general" }), {
@@ -64,7 +66,7 @@ export default function Settings() {
   const [isEnabled, setIsEnabled] = useState(settings.isEnabled ?? true);
   const [emailStep, setEmailStep] = useState(settings.emailCollectionStep ?? 2);
   const [maxGens, setMaxGens] = useState(settings.maxGenerationsPerWeek ?? 6);
-  const [language, setLanguage] = useState(settings.appLanguage ?? "shopify_default");
+  const [allowGuest, setAllowGuest] = useState(settings.allowGuestAccess ?? false);
 
   // Button appearance state
   const [btnLabel, setBtnLabel] = useState(settings.btnLabel || "Try On");
@@ -82,7 +84,7 @@ export default function Settings() {
     fd.append("isEnabled", String(isEnabled));
     fd.append("emailCollectionStep", String(emailStep));
     fd.append("maxGenerationsPerWeek", String(maxGens));
-    fd.append("appLanguage", language);
+    fd.append("allowGuestAccess", String(allowGuest));
     submit(fd, { method: "post" });
   };
 
@@ -96,6 +98,35 @@ export default function Settings() {
     fd.append("btnBorderRadius", String(btnRadius));
     submit(fd, { method: "post" });
   };
+
+  const PolarisToggle = ({ label, helpText, checked, onChange }) => (
+    <div style={{ marginTop: "12px", display: "flex", gap: "16px", alignItems: "flex-start" }}>
+      <div
+        onClick={() => onChange(!checked)}
+        style={{
+          width: "44px", height: "24px", borderRadius: "12px", cursor: "pointer",
+          backgroundColor: checked ? "#008060" : "#8c9196",
+          position: "relative", transition: "background-color 0.2s ease, opacity 0.2s",
+          flexShrink: 0,
+          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)"
+        }}
+      >
+        <div style={{
+          position: "absolute", top: "2px",
+          left: checked ? "22px" : "2px",
+          width: "20px", height: "20px", borderRadius: "50%",
+          backgroundColor: "#fff", transition: "left 0.2s ease",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2), 0 1px 1px rgba(0,0,0,0.1)",
+        }} />
+      </div>
+      {(label || helpText) && (
+        <div style={{ flex: 1, marginTop: "-2px" }}>
+          {label && <div style={{ fontSize: "14px", fontWeight: "600", color: "#202223", marginBottom: "2px", cursor: "pointer" }} onClick={() => onChange(!checked)}>{label}</div>}
+          {helpText && <div style={{ fontSize: "13px", color: "#6d7175" }}>{helpText}</div>}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <s-page heading="Settings">
@@ -112,98 +143,35 @@ export default function Settings() {
             )}
 
             {/* ── App Status ── */}
-            <s-card>
-              <s-stack direction="block" gap="base">
-                <s-text variant="headingSm">App Status</s-text>
+            <s-card padding="loose">
+              <s-stack direction="block" gap="tight">
+                <s-text variant="headingMd" fontWeight="semibold">App Status</s-text>
                 <s-text tone="subdued">
                   Enable or disable the Virtual Try-On button across your entire storefront without uninstalling the app.
                 </s-text>
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px" }}
-                  onClick={() => setIsEnabled(v => !v)}
-                >
-                  <div style={{
-                    width: "44px", height: "24px", borderRadius: "12px", cursor: "pointer",
-                    backgroundColor: isEnabled ? "#008060" : "#ccc",
-                    position: "relative", transition: "background-color 0.2s ease",
-                    flexShrink: 0,
-                  }}>
-                    <div style={{
-                      position: "absolute", top: "2px",
-                      left: isEnabled ? "22px" : "2px",
-                      width: "20px", height: "20px", borderRadius: "50%",
-                      backgroundColor: "#fff", transition: "left 0.2s ease",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                    }} />
-                  </div>
-                  <s-text fontWeight="semibold">
-                    {isEnabled ? "Try-On Enabled" : "Try-On Disabled"}
-                  </s-text>
-                </div>
-              </s-stack>
-            </s-card>
 
-            {/* ── Email Collection ── */}
-            <s-card>
-              <s-stack direction="block" gap="base">
-                <s-text variant="headingSm">Email Collection</s-text>
-                <s-text tone="subdued">
-                  Configure when customers are prompted to provide their email address during the try-on experience.
-                </s-text>
-                <s-select
-                  label="Collect email"
-                  name="emailCollectionStep"
-                  value={String(emailStep)}
-                  onChange={(e) => setEmailStep(parseInt(e.target.value))}
-                  options={[
-                    { label: "Before first try-on (required)", value: "0" },
-                    { label: "After 1st try-on", value: "1" },
-                    { label: "After 2nd try-on", value: "2" },
-                    { label: "After 3rd try-on", value: "3" },
-                    { label: "After 5th try-on", value: "5" },
-                    { label: "Never", value: "-1" },
-                  ]}
+                <PolarisToggle
+                  label={isEnabled ? "Virtual Try-On is Enabled" : "Virtual Try-On is Disabled"}
+                  checked={isEnabled}
+                  onChange={setIsEnabled}
+                  helpText={isEnabled ? "The 'Try On' button will appear on configured product pages." : "The 'Try On' button is completely hidden from the storefront."}
                 />
               </s-stack>
             </s-card>
 
-            {/* ── Generation Limits ── */}
-            <s-card>
-              <s-stack direction="block" gap="base">
-                <s-text variant="headingSm">Generation Limits</s-text>
+            {/* ── Access Control ── */}
+            <s-card padding="loose">
+              <s-stack direction="block" gap="tight">
+                <s-text variant="headingMd" fontWeight="semibold">Customer Access Control</s-text>
                 <s-text tone="subdued">
-                  Set a weekly cap on how many try-ons a single customer can generate. Resets every 7 days.
+                  Control who can access the Virtual Try-On feature on your storefront.
                 </s-text>
-                <s-text-field
-                  label="Max weekly try-ons per customer"
-                  type="number"
-                  value={String(maxGens)}
-                  onInput={(e) => setMaxGens(e.target.value)}
-                  min="1"
-                  max="100"
-                  helpText="Default is 6. Set higher for premium plans."
-                />
-              </s-stack>
-            </s-card>
 
-            {/* ── Language Settings ── */}
-            <s-card>
-              <s-stack direction="block" gap="base">
-                <s-text variant="headingSm">Language</s-text>
-                <s-text tone="subdued">
-                  Override the language of the Try-On interface. Defaults to your Shopify store locale.
-                </s-text>
-                <s-select
-                  label="Interface language"
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  options={[
-                    { label: "Use Shopify store default", value: "shopify_default" },
-                    { label: "English", value: "en" },
-                    { label: "French (Français)", value: "fr" },
-                    { label: "Spanish (Español)", value: "es" },
-                    { label: "German (Deutsch)", value: "de" },
-                  ]}
+                <PolarisToggle
+                  label="Allow guest access"
+                  checked={allowGuest}
+                  onChange={setAllowGuest}
+                  helpText={allowGuest ? "Anyone can use Virtual Try-On. A temporary session saves their photo." : "Only logged-in store customers can use Virtual Try-On. Guests will be asked to log in."}
                 />
               </s-stack>
             </s-card>
@@ -220,18 +188,19 @@ export default function Settings() {
             <s-divider />
 
             {/* ── Button Appearance ── */}
-            <s-card>
-              <s-stack direction="block" gap="base">
+            {/* ── Button Appearance ── */}
+            <s-card padding="loose">
+              <s-stack direction="block" gap="loose">
                 <s-stack direction="block" gap="tight">
-                  <s-text variant="headingSm">Try-On Button Appearance</s-text>
+                  <s-text variant="headingMd" fontWeight="semibold">Try-On Button Appearance</s-text>
                   <s-text tone="subdued">
-                    Customize how the Try-On button looks on your storefront. These settings can also be overridden per-page in the Theme Editor.
+                    Customize how the Try-On button looks on your storefront. The preview shows approximate styling.
                   </s-text>
                 </s-stack>
 
-                <s-grid columns={{ xs: 1, md: 2 }} gap="loose">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "32px", alignItems: "start" }}>
                   {/* Controls */}
-                  <s-stack direction="block" gap="base">
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                     <s-text-field
                       label="Button label"
                       value={btnLabel}
@@ -239,7 +208,7 @@ export default function Settings() {
                       placeholder="Try On"
                     />
 
-                    <s-stack direction="inline" gap="base">
+                    <div style={{ display: "flex", gap: "16px" }}>
                       <div style={{ flex: 1 }}>
                         <label style={{ display: "block", fontSize: "13px", fontWeight: "500", marginBottom: "6px", color: "#202223" }}>
                           Background color
@@ -248,7 +217,7 @@ export default function Settings() {
                           type="color"
                           value={btnColor}
                           onChange={(e) => setBtnColor(e.target.value)}
-                          style={{ width: "100%", height: "42px", borderRadius: "4px", border: "1px solid #c9cccf", cursor: "pointer" }}
+                          style={{ width: "100%", height: "40px", borderRadius: "5px", padding: "2px", border: "1px solid #c9cccf", cursor: "pointer", background: "#fff" }}
                         />
                       </div>
                       <div style={{ flex: 1 }}>
@@ -259,10 +228,10 @@ export default function Settings() {
                           type="color"
                           value={btnTextColor}
                           onChange={(e) => setBtnTextColor(e.target.value)}
-                          style={{ width: "100%", height: "42px", borderRadius: "4px", border: "1px solid #c9cccf", cursor: "pointer" }}
+                          style={{ width: "100%", height: "40px", borderRadius: "5px", padding: "2px", border: "1px solid #c9cccf", cursor: "pointer", background: "#fff" }}
                         />
                       </div>
-                    </s-stack>
+                    </div>
 
                     <s-text-field
                       label="Border radius (px)"
@@ -271,37 +240,37 @@ export default function Settings() {
                       onInput={(e) => setBtnRadius(parseInt(e.target.value) || 0)}
                       min="0"
                       max="30"
+                      helpText="Set to 0 for sharp corners, or up to 30 for completely rounded edges."
                     />
-                  </s-stack>
+                  </div>
 
                   {/* Live preview */}
                   <div style={{
                     display: "flex", flexDirection: "column", alignItems: "center",
-                    justifyContent: "center", gap: "12px",
-                    padding: "32px 16px",
-                    background: "#f6f6f7", borderRadius: "8px",
-                    border: "1px dashed #c9cccf",
+                    justifyContent: "center", gap: "16px",
+                    padding: "48px 16px",
+                    background: "#fdfdfd", borderRadius: "8px",
+                    border: "1px solid #e1e3e5",
                   }}>
-                    <s-text tone="subdued" variant="bodySm">Live Preview</s-text>
+                    <s-text tone="subdued" variant="bodySm">Widget Preview</s-text>
                     <button style={{
                       backgroundColor: btnColor,
                       color: btnTextColor,
                       borderRadius: btnRadius + "px",
                       padding: "12px 28px",
                       border: "none",
-                      fontSize: "15px",
+                      fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
-                      boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-                      transition: "opacity 0.2s",
+                      fontFamily: "inherit",
                     }}>
                       {btnLabel || "Try On"}
                     </button>
-                    <s-text tone="subdued" variant="bodySm">
-                      Appearance may vary slightly by theme
+                    <s-text tone="subdued" variant="bodyXs" align="center" style={{ marginTop: "8px", maxWidth: "200px" }}>
+                      May vary slightly depending on your active Shopify Theme CSS.
                     </s-text>
                   </div>
-                </s-grid>
+                </div>
               </s-stack>
             </s-card>
 

@@ -1,5 +1,5 @@
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useLoaderData, useRouteError, useNavigate, redirect } from "react-router";
+import { useLoaderData, useRouteError, useNavigate, redirect, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getOrCreateShopSettings } from "../models/shopSettings.server";
 import {
@@ -7,9 +7,14 @@ import {
   getEnabledProductCount,
   allProductsHaveImages,
   getEnabledProducts,
-  bulkDisableProducts
+  bulkDisableProducts,
+  updateOnboardingStatus
 } from "../models/productVtoConfig.server";
 import { shopDomainToStoreHandle } from "../utils/shop.server";
+import {
+  Page, Layout, Card, BlockStack, InlineStack, InlineGrid,
+  Text, Badge, Button, Box, Banner, Divider
+} from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -55,6 +60,15 @@ export const action = async ({ request }) => {
     }
   }
 
+  if (intent === "reset_onboarding") {
+    await updateOnboardingStatus(session.shop, {
+      isComplete: false,
+      imagesSelected: false,
+      productsSelected: false,
+    });
+    return redirect("/app/onboarding");
+  }
+
   return { success: false, error: "Unknown action" };
 };
 
@@ -63,124 +77,163 @@ export default function Index() {
   const isEnabled = Boolean(settings?.isEnabled);
   const planTier = settings?.planTier || "FREE";
   const navigate = useNavigate();
+  const submit = useSubmit();
 
   const themeEditorUrl = storeHandle
     ? `https://admin.shopify.com/store/${storeHandle}/themes/current/editor`
     : null;
 
   return (
-    <s-page heading="Virtual Try-On Dashboard">
-      {/* Manage Section */}
-      <s-section heading="Manage Enabled Products & Collections">
-        <s-box padding="base" borderWidth="base" borderRadius="base">
-          <s-stack direction="block" gap="base">
-            <s-text tone="subdued">
-              Enable Virtual Try-On for collections to automatically activate it for all products, or select individual products for custom settings.
-            </s-text>
+    <Page title="Virtual Try-On Dashboard">
+      <Layout>
+        {/* Main content */}
+        <Layout.Section>
+          <BlockStack gap="500">
+            {/* Products stat cards */}
+            <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+              <Card padding="500">
+                <BlockStack gap="200">
+                  <Text tone="subdued" variant="bodySm" as="p">Storefront Status</Text>
+                  <Badge tone={isEnabled ? "success" : "warning"} size="medium">
+                    {isEnabled ? "Active" : "Inactive"}
+                  </Badge>
+                  <Button onClick={() => navigate("/app/settings")} variant="plain" size="slim">Manage →</Button>
+                </BlockStack>
+              </Card>
 
-            <s-grid columns={{ sm: 1, md: 2 }} gap="base">
-              {/* Collections Card (Placeholder for now) */}
-              <s-box background="bg-surface-secondary" padding="base" borderRadius="base">
-                <s-stack direction="block" gap="tight">
-                  <s-text variant="headingSm" tone="subdued">Collections</s-text>
-                  <s-stack direction="inline" align="center" gap="base">
-                    <s-text variant="headingLg" fontWeight="bold">0</s-text>
-                    <s-badge tone="info">Inactive</s-badge>
-                  </s-stack>
-                </s-stack>
-              </s-box>
+              <Card padding="500">
+                <BlockStack gap="200">
+                  <Text tone="subdued" variant="bodySm" as="p">Products Enabled</Text>
+                  <Text variant="headingXl" as="p" fontWeight="bold">{enabledCount}</Text>
+                  <Button onClick={() => navigate("/app/products")} variant="plain" size="slim">Manage →</Button>
+                </BlockStack>
+              </Card>
 
-              {/* Products Card */}
-              <s-box background="bg-surface-secondary" padding="base" borderRadius="base">
-                <s-stack direction="block" gap="tight">
-                  <s-text variant="headingSm" tone="subdued">Products</s-text>
-                  <s-stack direction="inline" align="center" gap="base">
-                    <s-text variant="headingLg" fontWeight="bold">{enabledCount}</s-text>
-                    <s-badge tone={enabledCount > 0 ? "success" : "subdued"}>{enabledCount > 0 ? "Active" : "Inactive"}</s-badge>
-                  </s-stack>
-                </s-stack>
-              </s-box>
-            </s-grid>
+              <Card padding="500">
+                <BlockStack gap="200">
+                  <Text tone="subdued" variant="bodySm" as="p">Current Plan</Text>
+                  <Badge tone="info" size="medium">{planTier}</Badge>
+                  <Button onClick={() => navigate("/app/plan")} variant="plain" size="slim">Upgrade →</Button>
+                </BlockStack>
+              </Card>
 
-            <s-stack direction="inline" align="end" justify="end">
-              <s-button variant="primary" onClick={() => navigate("/app/products")}>Manage Products & Collections</s-button>
-            </s-stack>
-          </s-stack>
-        </s-box>
-      </s-section>
+              <Card padding="500">
+                <BlockStack gap="200">
+                  <Text tone="subdued" variant="bodySm" as="p">Analytics</Text>
+                  <Text variant="headingMd" as="p">Requests & conversions</Text>
+                  <Button onClick={() => navigate("/app/analytics")} variant="plain" size="slim">View →</Button>
+                </BlockStack>
+              </Card>
+            </InlineGrid>
 
-      <s-section heading="At a glance">
-        <s-grid columns={{ sm: 1, md: 2, lg: 4 }} gap="base">
-          <s-grid-item>
-            <s-box padding="base" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-heading>Storefront Status</s-heading>
-                <s-badge tone={isEnabled ? "success" : "warning"}>
-                  {isEnabled ? "On" : "Off"}
-                </s-badge>
-                <s-link href="/app/settings">Manage status</s-link>
-              </s-stack>
-            </s-box>
-          </s-grid-item>
-          <s-grid-item>
-            <s-box padding="base" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-heading>Plan</s-heading>
-                <s-badge tone="info">{planTier}</s-badge>
-                <s-link href="/app/plan">Manage plan</s-link>
-              </s-stack>
-            </s-box>
-          </s-grid-item>
-          <s-grid-item>
-            <s-box padding="base" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-heading>Analytics</s-heading>
-                <s-text tone="subdued">Requests & conversions</s-text>
-                <s-link href="/app/analytics">View analytics</s-link>
-              </s-stack>
-            </s-box>
-          </s-grid-item>
-          <s-grid-item>
-            <s-box padding="base" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-heading>Logs</s-heading>
-                <s-text tone="subdued">Event stream</s-text>
-                <s-link href="/app/logs">View logs</s-link>
-              </s-stack>
-            </s-box>
-          </s-grid-item>
-        </s-grid>
-      </s-section>
+            {/* Manage products section */}
+            <Card padding="500">
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <BlockStack gap="100">
+                    <Text variant="headingMd" as="h2">Manage Products</Text>
+                    <Text tone="subdued" as="p">
+                      Enable Virtual Try-On for individual products or entire collections.
+                    </Text>
+                  </BlockStack>
+                  <Button variant="primary" onClick={() => navigate("/app/products")}>
+                    Manage Products &amp; Collections
+                  </Button>
+                </InlineStack>
 
-      <s-section slot="aside" heading="Quick actions">
-        <s-stack direction="block" gap="base">
-          <s-link href="/app/products">
-            <s-button variant="primary" fullWidth>Manage Products</s-button>
-          </s-link>
-          {themeEditorUrl && (
-            <s-link href={themeEditorUrl} target="_blank">
-              <s-button variant="tertiary" fullWidth>Open Theme Editor</s-button>
-            </s-link>
-          )}
-          <s-link href="/app/settings">
-            <s-button variant="tertiary" fullWidth>Settings</s-button>
-          </s-link>
-        </s-stack>
-      </s-section>
+                <Divider />
 
-      <s-section slot="aside" heading="How it works">
-        <s-paragraph>
-          The Try-On button appears only on products you've enabled.
-          Customers click the button and are taken to your external VTO
-          frontend where they can upload their photo and try on the garment.
-        </s-paragraph>
-        <s-paragraph>
-          <s-text tone="subdued">
-            Store: {shop}
-          </s-text>
-        </s-paragraph>
-      </s-section>
-    </s-page>
+                <InlineGrid columns={{ xs: 1, sm: 2 }} gap="400">
+                  <Box
+                    background="bg-surface-secondary"
+                    borderRadius="200"
+                    padding="400"
+                  >
+                    <BlockStack gap="200">
+                      <Text tone="subdued" variant="bodySm" as="p">Collections</Text>
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text variant="headingXl" as="p" fontWeight="bold">0</Text>
+                        <Badge tone="info">Inactive</Badge>
+                      </InlineStack>
+                    </BlockStack>
+                  </Box>
+
+                  <Box
+                    background="bg-surface-secondary"
+                    borderRadius="200"
+                    padding="400"
+                  >
+                    <BlockStack gap="200">
+                      <Text tone="subdued" variant="bodySm" as="p">Products</Text>
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text variant="headingXl" as="p" fontWeight="bold">{enabledCount}</Text>
+                        <Badge tone={enabledCount > 0 ? "success" : "subdued"}>
+                          {enabledCount > 0 ? "Active" : "Inactive"}
+                        </Badge>
+                      </InlineStack>
+                    </BlockStack>
+                  </Box>
+                </InlineGrid>
+              </BlockStack>
+            </Card>
+
+            {/* Logs quick link */}
+            <Card padding="500">
+              <InlineStack align="space-between" blockAlign="center">
+                <BlockStack gap="100">
+                  <Text variant="headingMd" as="h2">Event Logs</Text>
+                  <Text tone="subdued" as="p">Monitor Try-On requests in real time.</Text>
+                </BlockStack>
+                <Button onClick={() => navigate("/app/logs")}>View Logs</Button>
+              </InlineStack>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+
+        {/* Sidebar */}
+        <Layout.Section variant="oneThird">
+          <BlockStack gap="500">
+            <Card padding="500">
+              <BlockStack gap="400">
+                <Text variant="headingMd" as="h2">Quick Actions</Text>
+                <BlockStack gap="300">
+                  <Button onClick={() => navigate("/app/products")} variant="primary" fullWidth>
+                    Manage Products
+                  </Button>
+                  {themeEditorUrl && (
+                    <Button url={themeEditorUrl} target="_blank" fullWidth>
+                      Open Theme Editor
+                    </Button>
+                  )}
+                  <Button onClick={() => navigate("/app/settings")} fullWidth>
+                    Settings
+                  </Button>
+                  <Button
+                    tone="critical"
+                    fullWidth
+                    onClick={() => submit({ intent: "reset_onboarding" }, { method: "post" })}
+                  >
+                    Reset Onboarding (Dev)
+                  </Button>
+                </BlockStack>
+              </BlockStack>
+            </Card>
+
+            <Card padding="500">
+              <BlockStack gap="300">
+                <Text variant="headingMd" as="h2">How it works</Text>
+                <Text as="p">
+                  The Try-On button appears only on products you've enabled. Customers click the button
+                  to try on the garment virtually using AI.
+                </Text>
+                <Divider />
+                <Text tone="subdued" variant="bodySm" as="p">Store: {shop}</Text>
+              </BlockStack>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }
 
@@ -189,27 +242,20 @@ export function ErrorBoundary() {
   console.error("Dashboard error:", error);
 
   return (
-    <s-page heading="Virtual Try-On">
-      <s-section>
-        <s-banner tone="critical">
-          <s-stack direction="block" gap="tight">
-            <s-text fontWeight="semibold">
-              Something went wrong loading the dashboard
-            </s-text>
-            <s-paragraph>
-              Please try refreshing the page. If the problem persists, contact
-              support.
-            </s-paragraph>
-            <s-paragraph>
-              <s-text tone="subdued" variant="bodySm">
-                Error:{" "}
-                {error?.message || error?.statusText || "Unknown error"}
-              </s-text>
-            </s-paragraph>
-          </s-stack>
-        </s-banner>
-      </s-section>
-    </s-page>
+    <Page title="Virtual Try-On">
+      <Layout>
+        <Layout.Section>
+          <Banner tone="critical" title="Something went wrong loading the dashboard">
+            <BlockStack gap="200">
+              <Text as="p">Please try refreshing the page. If the problem persists, contact support.</Text>
+              <Text tone="subdued" variant="bodySm" as="p">
+                Error: {error?.message || error?.statusText || "Unknown error"}
+              </Text>
+            </BlockStack>
+          </Banner>
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }
 

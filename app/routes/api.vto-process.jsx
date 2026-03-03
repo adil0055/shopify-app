@@ -47,16 +47,16 @@ export const action = async ({ request }) => {
 
     try {
         const formData = await request.formData();
-        const personImage = formData.get("person_image");       // File blob
+        const personImage = formData.get("person_image");       // File blob (Optional)
         const garmentImageUrl = formData.get("garment_image");  // URL string
         const productId = formData.get("product_id");           // Shopify GID
         const category = formData.get("category") || "tops";    // garment category
-        const customerSessionId = formData.get("session_id") || "anon";
+        const userIdPayload = formData.get("user_id");
 
         // ── Validate ──
-        if (!personImage || !garmentImageUrl) {
+        if (!garmentImageUrl || !userIdPayload) {
             return new Response(
-                JSON.stringify({ ok: false, error: "Missing required fields: person_image, garment_image" }),
+                JSON.stringify({ ok: false, error: "Missing required fields: user_id or garment_image" }),
                 { status: 400, headers: corsHeaders }
             );
         }
@@ -106,22 +106,18 @@ export const action = async ({ request }) => {
             );
         }
 
-        const userId = `${shop}_${customerSessionId}`;
-        const userImageId = `v_${Date.now()}`;
+        const userId = userIdPayload;
         const idempotencyKey = randomUUID();
 
         const backendForm = new FormData();
         backendForm.append("user_id", userId);
-        backendForm.append("user_image_id", userImageId);
-        backendForm.append("garment_id", productId || "unknown");
-        backendForm.append("category", category);
+        backendForm.append("shop", shop);
         backendForm.append("garment_image_url", garmentImageUrl);
-        backendForm.append("consent_confirmed", "true");
 
-        // Attach the person image file
-        if (personImage instanceof File || personImage instanceof Blob) {
+        // Attach the person image file ONLY if they uploaded a new one
+        if (personImage && (personImage instanceof File || personImage instanceof Blob)) {
             backendForm.append("user_image", personImage, personImage.name || "photo.jpg");
-        } else {
+        } else if (personImage) {
             return new Response(
                 JSON.stringify({ ok: false, error: "person_image must be a file" }),
                 { status: 400, headers: corsHeaders }
@@ -167,6 +163,42 @@ export const action = async ({ request }) => {
                 }),
                 { status: backendResponse.status >= 500 ? 502 : backendResponse.status, headers: corsHeaders }
             );
+        }
+
+        // ── Ensure Shopify Customer Metafield is checked/updated ──
+        if (personImage && userId.startsWith("shopify_cust_")) {
+            try {
+                const { unauthenticated } = require("../shopify.server");
+                const { admin } = await unauthenticated.admin(shop);
+                const actualCustomerId = userId.replace("shopify_cust_", "");
+
+                await admin.graphql(`
+                  mutation updateCustomerMetafields($input: CustomerInput!) {
+                    customerUpdate(input: $input) {
+                      userErrors {
+                        field
+                        message
+                      }
+                    }
+                  }
+                `, {
+                    variables: {
+                        input: {
+                            id: `gid://shopify/Customer/${actualCustomerId}`,
+                            metafields: [
+                                {
+                                    namespace: "vto",
+                                    key: "has_image",
+                                    type: "boolean",
+                                    value: "true"
+                                }
+                            ]
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error("Failed to update Shopify Customer Metafield:", err);
+            }
         }
 
         // ── Return job info to frontend ──

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useLoaderData, useSubmit, useNavigation, useActionData, useRouteError } from "react-router";
+import { useLoaderData, useSubmit, useNavigation, useActionData, useRouteError, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import {
@@ -8,6 +8,10 @@ import {
     bulkDisableProducts,
     deleteProductConfigs
 } from "../models/productVtoConfig.server";
+import {
+    Card, BlockStack, InlineStack, Text, Badge, Button,
+    Banner, Box, TextField, Spinner, Divider, InlineGrid
+} from "@shopify/polaris";
 
 // GraphQL query to fetch products with pagination and search
 const PRODUCTS_QUERY_FORWARD = `
@@ -104,28 +108,16 @@ export const loader = async ({ request }) => {
     const before = url.searchParams.get("before") || null;
     const pageSize = 25;
 
-    // Build Shopify search query
     let shopifyQuery = searchQuery ? `title:*${searchQuery}*` : null;
 
-    // Determine direction and fetch products from Shopify
     let response;
     if (before) {
-        // Backward pagination
         response = await admin.graphql(PRODUCTS_QUERY_BACKWARD, {
-            variables: {
-                last: pageSize,
-                before,
-                query: shopifyQuery,
-            },
+            variables: { last: pageSize, before, query: shopifyQuery },
         });
     } else {
-        // Forward pagination (default)
         response = await admin.graphql(PRODUCTS_QUERY_FORWARD, {
-            variables: {
-                first: pageSize,
-                after,
-                query: shopifyQuery,
-            },
+            variables: { first: pageSize, after, query: shopifyQuery },
         });
     }
 
@@ -133,11 +125,9 @@ export const loader = async ({ request }) => {
     const products = data.data?.products?.edges || [];
     const pageInfo = data.data?.products?.pageInfo || {};
 
-    // Get existing configurations from our database
     const existingConfigs = await getAllProductConfigs(shop);
     const configMap = new Map(existingConfigs.map(c => [c.productId, c]));
 
-    // Merge Shopify products with our config data
     const productsWithConfig = products.map(({ node, cursor }) => ({
         id: node.id,
         cursor,
@@ -148,7 +138,6 @@ export const loader = async ({ request }) => {
         imageAlt: node.featuredImage?.altText || node.title,
         inventory: node.totalInventory,
         price: node.priceRangeV2?.minVariantPrice,
-        // Our config data
         isEnabled: configMap.get(node.id)?.isEnabled ?? false,
         hasImageSelected: configMap.get(node.id)?.selectedImageId ? true : false,
     }));
@@ -170,20 +159,16 @@ export const action = async ({ request }) => {
 
     try {
         if (intent === "enable") {
-            // Enable selected products
             const productsJson = formData.get("products");
             const products = JSON.parse(productsJson);
-
             if (products.length === 0) {
                 return { error: "Please select at least one product to enable." };
             }
-
             await bulkEnableProducts(shop, products.map(p => ({
                 productId: p.id,
                 productTitle: p.title,
                 productImage: p.image,
             })));
-
             return { success: true, message: `Enabled ${products.length} product(s) for Try-On.` };
         }
 
@@ -211,57 +196,33 @@ export default function ProductSelection() {
     const actionData = useActionData();
     const submit = useSubmit();
     const navigation = useNavigation();
+    const navigate = useNavigate();
 
     const [selectedProducts, setSelectedProducts] = useState([]);
     const [localSearch, setLocalSearch] = useState(searchQuery || "");
 
     const isLoading = navigation.state !== "idle";
 
-    // Clear selection when products change
-    useEffect(() => {
-        setSelectedProducts([]);
-    }, [products]);
+    useEffect(() => { setSelectedProducts([]); }, [products]);
 
-    // Handle search
     const handleSearch = useCallback(() => {
-        const formData = new FormData();
         submit({ q: localSearch }, { method: "get" });
     }, [localSearch, submit]);
 
-    // Handle search on Enter key
-    const handleSearchKeyDown = useCallback((e) => {
-        if (e.key === "Enter") {
-            handleSearch();
-        }
-    }, [handleSearch]);
-
-    // Clear search
     const handleClearSearch = useCallback(() => {
         setLocalSearch("");
         submit({}, { method: "get" });
     }, [submit]);
 
-    // Toggle product selection
     const toggleProduct = useCallback((productId) => {
-        setSelectedProducts(prev => {
-            if (prev.includes(productId)) {
-                return prev.filter(id => id !== productId);
-            }
-            return [...prev, productId];
-        });
+        setSelectedProducts(prev =>
+            prev.includes(productId) ? prev.filter(id => id !== productId) : [...prev, productId]
+        );
     }, []);
 
-    // Select all
-    const selectAll = useCallback(() => {
-        setSelectedProducts(products.map(p => p.id));
-    }, [products]);
+    const selectAll = useCallback(() => setSelectedProducts(products.map(p => p.id)), [products]);
+    const deselectAll = useCallback(() => setSelectedProducts([]), []);
 
-    // Deselect all
-    const deselectAll = useCallback(() => {
-        setSelectedProducts([]);
-    }, []);
-
-    // Enable selected products
     const handleEnable = useCallback(() => {
         const selectedData = products.filter(p => selectedProducts.includes(p.id));
         const formData = new FormData();
@@ -270,7 +231,6 @@ export default function ProductSelection() {
         submit(formData, { method: "post" });
     }, [products, selectedProducts, submit]);
 
-    // Disable selected products
     const handleDisable = useCallback(() => {
         const formData = new FormData();
         formData.set("intent", "disable");
@@ -278,7 +238,6 @@ export default function ProductSelection() {
         submit(formData, { method: "post" });
     }, [selectedProducts, submit]);
 
-    // Navigate to next/previous page
     const handleNextPage = useCallback(() => {
         if (pageInfo.hasNextPage) {
             submit({ q: searchQuery || "", after: pageInfo.endCursor }, { method: "get" });
@@ -294,275 +253,223 @@ export default function ProductSelection() {
     const selectedCount = selectedProducts.length;
     const allSelected = products.length > 0 && selectedCount === products.length;
     const someSelected = selectedCount > 0 && !allSelected;
-
-    // Get selected products that are currently enabled
-    const selectedEnabled = products.filter(
-        p => selectedProducts.includes(p.id) && p.isEnabled
-    ).length;
-    const selectedDisabled = selectedCount - selectedEnabled;
+    const selectedEnabled = products.filter(p => selectedProducts.includes(p.id) && p.isEnabled).length;
 
     return (
-        <>
-            {/* Action feedback */}
+        <BlockStack gap="500">
+            {/* Feedback banners */}
             {actionData?.error && (
-                <s-section>
-                    <s-banner tone="critical" dismissible>
-                        <s-paragraph>{actionData.error}</s-paragraph>
-                    </s-banner>
-                </s-section>
+                <Banner tone="critical" onDismiss={() => { }}>
+                    <Text as="p">{actionData.error}</Text>
+                </Banner>
             )}
-
             {actionData?.success && (
-                <s-section>
-                    <s-banner tone="success" dismissible>
-                        <s-paragraph>{actionData.message}</s-paragraph>
-                    </s-banner>
-                </s-section>
+                <Banner tone="success" onDismiss={() => { }}>
+                    <Text as="p">{actionData.message}</Text>
+                </Banner>
             )}
 
             {/* Instructions */}
-            <s-section>
-                <s-banner tone="info">
-                    <s-paragraph>
-                        <strong>Step 1: Select Products</strong> — Choose which products should display the "Try On" button.
-                        Customers will only see the button on enabled products.
-                    </s-paragraph>
-                </s-banner>
-            </s-section>
+            <Banner tone="info">
+                <Text as="p">
+                    <Text as="span" fontWeight="bold">Step 1: Select Products</Text> — Choose which products should
+                    display the "Try On" button. Customers will only see the button on enabled products.
+                </Text>
+            </Banner>
 
             {/* Stats */}
-            <s-section>
-                <s-stack direction="inline" gap="loose">
-                    <s-badge tone="info">{products.length} products shown</s-badge>
-                    <s-badge tone="success">{enabledCount} enabled for Try-On</s-badge>
-                    {selectedCount > 0 && (
-                        <s-badge tone="attention">{selectedCount} selected</s-badge>
-                    )}
-                </s-stack>
-            </s-section>
+            <InlineStack gap="300">
+                <Badge tone="info">{products.length} products shown</Badge>
+                <Badge tone="success">{enabledCount} enabled for Try-On</Badge>
+                {selectedCount > 0 && <Badge tone="attention">{selectedCount} selected</Badge>}
+            </InlineStack>
 
-            {/* Search and Actions */}
-            <s-section>
-                <s-stack direction="block" gap="base">
-                    <s-stack direction="inline" gap="base" align="center">
-                        <s-text-field
-                            label="Search products"
-                            labelHidden
-                            placeholder="Search by product title..."
-                            value={localSearch}
-                            onChange={(e) => setLocalSearch(e.target.value)}
-                            onKeyDown={handleSearchKeyDown}
-                            clearButton
-                            onClearButtonClick={handleClearSearch}
-                        />
-                        <s-button onClick={handleSearch} disabled={isLoading}>
-                            Search
-                        </s-button>
+            {/* Search + Bulk Actions */}
+            <Card padding="400">
+                <BlockStack gap="300">
+                    <InlineStack gap="300" blockAlign="end">
+                        <Box style={{ flex: 1 }}>
+                            <TextField
+                                label="Search products"
+                                labelHidden
+                                placeholder="Search by product title..."
+                                value={localSearch}
+                                onChange={setLocalSearch}
+                                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                                clearButton
+                                onClearButtonClick={handleClearSearch}
+                                autoComplete="off"
+                            />
+                        </Box>
+                        <Button onClick={handleSearch} disabled={isLoading}>Search</Button>
                         {searchQuery && (
-                            <s-button onClick={handleClearSearch} variant="plain">
-                                Clear
-                            </s-button>
+                            <Button onClick={handleClearSearch} variant="plain">Clear</Button>
                         )}
-                    </s-stack>
+                    </InlineStack>
 
-                    {/* Bulk actions */}
-                    <s-stack direction="inline" gap="base">
-                        <s-button
-                            onClick={allSelected ? deselectAll : selectAll}
-                            variant="plain"
-                        >
+                    <InlineStack gap="300">
+                        <Button onClick={allSelected ? deselectAll : selectAll} variant="plain">
                             {allSelected ? "Deselect All" : "Select All"}
-                        </s-button>
-
+                        </Button>
                         {selectedCount > 0 && (
                             <>
-                                <s-button
-                                    onClick={handleEnable}
-                                    variant="primary"
-                                    disabled={isLoading}
-                                >
+                                <Button onClick={handleEnable} variant="primary" disabled={isLoading}>
                                     Enable Try-On ({selectedCount})
-                                </s-button>
-
+                                </Button>
                                 {selectedEnabled > 0 && (
-                                    <s-button
-                                        onClick={handleDisable}
-                                        disabled={isLoading}
-                                    >
+                                    <Button onClick={handleDisable} disabled={isLoading}>
                                         Disable ({selectedEnabled})
-                                    </s-button>
+                                    </Button>
                                 )}
                             </>
                         )}
-                    </s-stack>
-                </s-stack>
-            </s-section>
+                    </InlineStack>
+                </BlockStack>
+            </Card>
 
             {/* Products Table */}
-            <s-section>
+            <Card padding="0">
                 {isLoading ? (
-                    <s-box padding="loose">
-                        <s-spinner />
-                        <s-text>Loading products...</s-text>
-                    </s-box>
+                    <Box padding="600">
+                        <InlineStack gap="300" blockAlign="center">
+                            <Spinner size="small" />
+                            <Text tone="subdued" as="p">Loading products...</Text>
+                        </InlineStack>
+                    </Box>
                 ) : products.length === 0 ? (
-                    <s-box padding="loose" borderWidth="base" borderRadius="base">
-                        <s-stack direction="block" gap="base" align="center">
-                            <s-text tone="subdued">
+                    <Box padding="600">
+                        <BlockStack gap="300" inlineAlign="center">
+                            <Text tone="subdued" as="p">
                                 {searchQuery
                                     ? `No products found matching "${searchQuery}"`
-                                    : "No products found in your store"
-                                }
-                            </s-text>
+                                    : "No products found in your store"}
+                            </Text>
                             {searchQuery && (
-                                <s-button onClick={handleClearSearch}>Clear search</s-button>
+                                <Button onClick={handleClearSearch}>Clear search</Button>
                             )}
-                        </s-stack>
-                    </s-box>
+                        </BlockStack>
+                    </Box>
                 ) : (
-                    <s-box borderWidth="base" borderRadius="base" overflow="hidden">
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                            <thead>
-                                <tr style={{ borderBottom: "1px solid var(--p-color-border)" }}>
-                                    <th style={{ padding: "12px 16px", textAlign: "left", width: "40px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                            <tr style={{ borderBottom: "1px solid var(--p-color-border)", backgroundColor: "var(--p-color-bg-surface-secondary)" }}>
+                                <th style={{ padding: "12px 16px", textAlign: "left", width: "40px" }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                                        onChange={(e) => e.target.checked ? selectAll() : deselectAll()}
+                                    />
+                                </th>
+                                <th style={{ padding: "12px 16px", textAlign: "left", width: "60px" }}></th>
+                                <th style={{ padding: "12px 16px", textAlign: "left" }}>
+                                    <Text variant="bodySm" fontWeight="semibold" as="span">Product</Text>
+                                </th>
+                                <th style={{ padding: "12px 16px", textAlign: "left", width: "100px" }}>
+                                    <Text variant="bodySm" fontWeight="semibold" as="span">Status</Text>
+                                </th>
+                                <th style={{ padding: "12px 16px", textAlign: "left", width: "130px" }}>
+                                    <Text variant="bodySm" fontWeight="semibold" as="span">Try-On</Text>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {products.map((product) => (
+                                <tr
+                                    key={product.id}
+                                    style={{
+                                        borderBottom: "1px solid var(--p-color-border)",
+                                        backgroundColor: selectedProducts.includes(product.id)
+                                            ? "var(--p-color-bg-surface-selected)"
+                                            : "transparent",
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={() => toggleProduct(product.id)}
+                                >
+                                    <td style={{ padding: "12px 16px" }} onClick={(e) => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
-                                            checked={allSelected}
-                                            ref={(el) => {
-                                                if (el) el.indeterminate = someSelected;
-                                            }}
-                                            onChange={(e) => {
-                                                if (e.target.checked) selectAll();
-                                                else deselectAll();
-                                            }}
+                                            checked={selectedProducts.includes(product.id)}
+                                            onChange={() => toggleProduct(product.id)}
                                         />
-                                    </th>
-                                    <th style={{ padding: "12px 16px", textAlign: "left", width: "60px" }}>Image</th>
-                                    <th style={{ padding: "12px 16px", textAlign: "left" }}>Product</th>
-                                    <th style={{ padding: "12px 16px", textAlign: "left", width: "100px" }}>Status</th>
-                                    <th style={{ padding: "12px 16px", textAlign: "left", width: "120px" }}>Try-On</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {products.map((product) => (
-                                    <tr
-                                        key={product.id}
-                                        style={{
-                                            borderBottom: "1px solid var(--p-color-border)",
-                                            backgroundColor: selectedProducts.includes(product.id)
-                                                ? "var(--p-color-bg-surface-selected)"
-                                                : "transparent"
-                                        }}
-                                        onClick={() => toggleProduct(product.id)}
-                                    >
-                                        <td style={{ padding: "12px 16px" }} onClick={(e) => e.stopPropagation()}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedProducts.includes(product.id)}
-                                                onChange={() => toggleProduct(product.id)}
+                                    </td>
+                                    <td style={{ padding: "12px 16px" }}>
+                                        {product.image ? (
+                                            <img
+                                                src={product.image}
+                                                alt={product.imageAlt}
+                                                style={{ width: "44px", height: "44px", objectFit: "cover", borderRadius: "var(--p-border-radius-100)" }}
                                             />
-                                        </td>
-                                        <td style={{ padding: "12px 16px" }}>
-                                            {product.image ? (
-                                                <img
-                                                    src={product.image}
-                                                    alt={product.imageAlt}
-                                                    style={{
-                                                        width: "40px",
-                                                        height: "40px",
-                                                        objectFit: "cover",
-                                                        borderRadius: "4px"
-                                                    }}
-                                                />
-                                            ) : (
-                                                <div style={{
-                                                    width: "40px",
-                                                    height: "40px",
-                                                    backgroundColor: "var(--p-color-bg-surface-secondary)",
-                                                    borderRadius: "4px",
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    justifyContent: "center"
-                                                }}>
-                                                    <s-text tone="subdued">—</s-text>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td style={{ padding: "12px 16px" }}>
-                                            <s-stack direction="block" gap="none">
-                                                <s-text fontWeight="semibold">{product.title}</s-text>
-                                                <s-text tone="subdued" variant="bodySm">
-                                                    {product.handle}
-                                                </s-text>
-                                            </s-stack>
-                                        </td>
-                                        <td style={{ padding: "12px 16px" }}>
-                                            <s-badge tone={product.status === "ACTIVE" ? "success" : "subdued"}>
-                                                {product.status}
-                                            </s-badge>
-                                        </td>
-                                        <td style={{ padding: "12px 16px" }}>
-                                            {product.isEnabled ? (
-                                                <s-stack direction="block" gap="none">
-                                                    <s-badge tone="success">Enabled</s-badge>
-                                                    {product.hasImageSelected ? (
-                                                        <s-text tone="success" variant="bodySm">Image set</s-text>
-                                                    ) : (
-                                                        <s-text tone="caution" variant="bodySm">Needs image</s-text>
-                                                    )}
-                                                </s-stack>
-                                            ) : (
-                                                <s-badge tone="subdued">Disabled</s-badge>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </s-box>
+                                        ) : (
+                                            <div style={{
+                                                width: "44px", height: "44px",
+                                                backgroundColor: "var(--p-color-bg-surface-secondary)",
+                                                borderRadius: "var(--p-border-radius-100)",
+                                                display: "flex", alignItems: "center", justifyContent: "center"
+                                            }}>
+                                                <Text tone="subdued" as="span">—</Text>
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td style={{ padding: "12px 16px" }}>
+                                        <BlockStack gap="050">
+                                            <Text fontWeight="semibold" as="p">{product.title}</Text>
+                                            <Text tone="subdued" variant="bodySm" as="p">{product.handle}</Text>
+                                        </BlockStack>
+                                    </td>
+                                    <td style={{ padding: "12px 16px" }}>
+                                        <Badge tone={product.status === "ACTIVE" ? "success" : "subdued"}>
+                                            {product.status}
+                                        </Badge>
+                                    </td>
+                                    <td style={{ padding: "12px 16px" }}>
+                                        {product.isEnabled ? (
+                                            <BlockStack gap="100">
+                                                <Badge tone="success">Enabled</Badge>
+                                                <Text tone={product.hasImageSelected ? "success" : "caution"} variant="bodySm" as="p">
+                                                    {product.hasImageSelected ? "Image set" : "Needs image"}
+                                                </Text>
+                                            </BlockStack>
+                                        ) : (
+                                            <Badge tone="subdued">Disabled</Badge>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 )}
-            </s-section>
+            </Card>
 
             {/* Pagination */}
             {(pageInfo.hasNextPage || pageInfo.hasPreviousPage) && (
-                <s-section>
-                    <s-stack direction="inline" gap="base" align="center">
-                        <s-button
-                            onClick={handlePrevPage}
-                            disabled={!pageInfo.hasPreviousPage || isLoading}
-                        >
-                            Previous
-                        </s-button>
-                        <s-button
-                            onClick={handleNextPage}
-                            disabled={!pageInfo.hasNextPage || isLoading}
-                        >
-                            Next
-                        </s-button>
-                    </s-stack>
-                </s-section>
+                <InlineStack gap="300">
+                    <Button onClick={handlePrevPage} disabled={!pageInfo.hasPreviousPage || isLoading}>
+                        ← Previous
+                    </Button>
+                    <Button onClick={handleNextPage} disabled={!pageInfo.hasNextPage || isLoading}>
+                        Next →
+                    </Button>
+                </InlineStack>
             )}
 
+            <Divider />
+
             {/* Navigation */}
-            <s-section>
-                <s-stack direction="inline" gap="base">
-                    <s-link href="/app/onboarding/customize">
-                        <s-button>← Back to Customize</s-button>
-                    </s-link>
-                    <s-link href="/app/onboarding/images">
-                        <s-button
-                            variant="primary"
-                            disabled={enabledCount === 0}
-                        >
-                            Next: Choose Images →
-                        </s-button>
-                    </s-link>
-                    {enabledCount === 0 && (
-                        <s-text tone="subdued">Enable at least one product to continue</s-text>
-                    )}
-                </s-stack>
-            </s-section>
-        </>
+            <InlineStack gap="300" blockAlign="center">
+                <Button onClick={() => navigate("/app/onboarding/customize")}>← Back to Customize</Button>
+                <Button
+                    variant="primary"
+                    disabled={enabledCount === 0}
+                    onClick={() => navigate("/app/onboarding/images")}
+                >
+                    Next: Choose Images →
+                </Button>
+                {enabledCount === 0 && (
+                    <Text tone="subdued" as="p">Enable at least one product to continue</Text>
+                )}
+            </InlineStack>
+        </BlockStack>
     );
 }
 
@@ -573,17 +480,8 @@ export function ErrorBoundary() {
     console.error("Products page error:", error);
 
     return (
-        <>
-            <s-section>
-                <s-banner tone="critical">
-                    <s-stack direction="block" gap="tight">
-                        <s-text fontWeight="semibold">Failed to load products</s-text>
-                        <s-paragraph>
-                            Please try refreshing. Error: {error?.message || "Unknown error"}
-                        </s-paragraph>
-                    </s-stack>
-                </s-banner>
-            </s-section>
-        </>
+        <Banner tone="critical" title="Failed to load products">
+            <Text as="p">Please try refreshing. Error: {error?.message || "Unknown error"}</Text>
+        </Banner>
     );
 }

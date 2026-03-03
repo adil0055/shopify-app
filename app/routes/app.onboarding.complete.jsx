@@ -1,5 +1,6 @@
-import { useLoaderData, useSubmit, useNavigation, useActionData, redirect, useRouteError } from "react-router";
+import { useLoaderData, useSubmit, useNavigation, useActionData, redirect, useRouteError, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { Page, Layout, Card, BlockStack, InlineStack, Text, Badge, Button, Banner, Box, List, Divider } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import {
     getEnabledProducts,
@@ -55,7 +56,10 @@ export const action = async ({ request }) => {
     try {
         if (intent === "complete") {
             await completeOnboarding(shop);
-            return { success: true, message: "Onboarding completed successfully!" };
+            // Use a redirect so App Bridge handles navigation with auth context intact
+            const url = new URL(request.url);
+            const searchParams = url.searchParams.toString() ? `?${url.searchParams.toString()}` : "";
+            return redirect(`/app/onboarding/complete${searchParams}`);
         }
 
         return { error: "Unknown action." };
@@ -76,6 +80,7 @@ export default function OnboardingComplete() {
     const actionData = useActionData();
     const submit = useSubmit();
     const navigation = useNavigation();
+    const navigate = useNavigate();
 
     const isLoading = navigation.state !== "idle";
 
@@ -87,192 +92,171 @@ export default function OnboardingComplete() {
 
     const isComplete = status.isComplete || actionData?.success;
 
+
+
     return (
-        <>
+        <BlockStack gap="500">
             {/* Success banner */}
             {isComplete && (
-                <s-section>
-                    <s-banner tone="success">
-                        <s-stack direction="block" gap="tight">
-                            <s-text fontWeight="bold">🎉 Try-On is now configured!</s-text>
-                            <s-text>
-                                Your customers will see the "Try On" button on {enabledProducts.length} product{enabledProducts.length !== 1 ? "s" : ""}.
-                            </s-text>
-                        </s-stack>
-                    </s-banner>
-                </s-section>
+                <Banner tone="success">
+                    <BlockStack gap="200">
+                        <Text as="p" fontWeight="bold">🎉 Try-On is now configured!</Text>
+                        <Text as="p">
+                            Your customers will see the "Try On" button on {enabledProducts.length} product{enabledProducts.length !== 1 ? "s" : ""}.
+                        </Text>
+                    </BlockStack>
+                </Banner>
             )}
 
             {/* Configuration summary */}
-            <s-section>
-                <s-box borderWidth="base" borderRadius="base" padding="loose">
-                    <s-stack direction="block" gap="loose">
-                        <s-heading>Configuration Summary</s-heading>
+            <Card padding="500">
+                <BlockStack gap="500">
+                    <Text variant="headingLg" as="h2">Configuration Summary</Text>
 
-                        <s-stack direction="block" gap="base">
-                            <s-stack direction="inline" gap="base" align="center">
-                                <s-badge tone="success">✓</s-badge>
-                                <s-text>{enabledProducts.length} product{enabledProducts.length !== 1 ? "s" : ""} enabled for Try-On</s-text>
-                            </s-stack>
+                    <BlockStack gap="300">
+                        <InlineStack gap="300" blockAlign="center">
+                            <Badge tone="success">✓</Badge>
+                            <Text as="span">{enabledProducts.length} product{enabledProducts.length !== 1 ? "s" : ""} enabled for Try-On</Text>
+                        </InlineStack>
 
-                            <s-stack direction="inline" gap="base" align="center">
-                                <s-badge tone="success">✓</s-badge>
-                                <s-text>VTO-compatible images selected for all products</s-text>
-                            </s-stack>
+                        <InlineStack gap="300" blockAlign="center">
+                            <Badge tone="success">✓</Badge>
+                            <Text as="span">VTO-compatible images selected for all products</Text>
+                        </InlineStack>
 
-                            <s-stack direction="inline" gap="base" align="center">
-                                <s-badge tone="info">ℹ</s-badge>
-                                <s-text>Store: {shop}</s-text>
-                            </s-stack>
-                        </s-stack>
-                    </s-stack>
-                </s-box>
-            </s-section>
+                        <InlineStack gap="300" blockAlign="center">
+                            <Badge tone="info">ℹ</Badge>
+                            <Text as="span">Store: {shop}</Text>
+                        </InlineStack>
+                    </BlockStack>
+                </BlockStack>
+            </Card>
 
             {/* Configured products preview */}
-            <s-section>
-                <s-box borderWidth="base" borderRadius="base" padding="base">
-                    <s-stack direction="block" gap="base">
-                        <s-heading variant="headingMd">Enabled Products</s-heading>
+            <Card padding="500">
+                <BlockStack gap="400">
+                    <Text variant="headingMd" as="h3">Enabled Products</Text>
 
-                        <div style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-                            gap: "12px",
-                        }}>
-                            {enabledProducts.slice(0, 8).map((product) => (
-                                <s-box
-                                    key={product.id}
-                                    borderWidth="base"
-                                    borderRadius="base"
-                                    padding="tight"
-                                >
-                                    <s-stack direction="inline" gap="tight" align="center">
-                                        {product.selectedImageUrl ? (
-                                            <img
-                                                src={product.selectedImageUrl}
-                                                alt={product.productTitle}
-                                                style={{
-                                                    width: "40px",
-                                                    height: "40px",
-                                                    objectFit: "cover",
-                                                    borderRadius: "4px",
-                                                }}
-                                            />
-                                        ) : (
-                                            <div style={{
-                                                width: "40px",
-                                                height: "40px",
-                                                backgroundColor: "var(--p-color-bg-surface-secondary)",
-                                                borderRadius: "4px",
-                                            }} />
-                                        )}
-                                        <s-stack direction="block" gap="none">
-                                            <s-text fontWeight="medium" truncate>
+                    <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                        gap: "16px",
+                    }}>
+                        {enabledProducts.slice(0, 8).map((product) => (
+                            <div key={product.id} style={{
+                                border: "1px solid var(--p-color-border)",
+                                borderRadius: "var(--p-border-radius-200)",
+                                padding: "var(--p-space-200)",
+                            }}>
+                                <InlineStack gap="300" blockAlign="center" wrap={false}>
+                                    {product.selectedImageUrl ? (
+                                        <img
+                                            src={product.selectedImageUrl}
+                                            alt={product.productTitle}
+                                            style={{
+                                                width: "48px",
+                                                height: "48px",
+                                                objectFit: "cover",
+                                                borderRadius: "var(--p-border-radius-100)",
+                                            }}
+                                        />
+                                    ) : (
+                                        <div style={{
+                                            width: "48px",
+                                            height: "48px",
+                                            backgroundColor: "var(--p-color-bg-surface-secondary)",
+                                            borderRadius: "var(--p-border-radius-100)",
+                                        }} />
+                                    )}
+                                    <Box style={{ overflow: "hidden" }}>
+                                        <BlockStack gap="100">
+                                            <Text fontWeight="medium" truncate as="p">
                                                 {product.productTitle}
-                                            </s-text>
-                                            <s-badge tone="success" size="small">Ready</s-badge>
-                                        </s-stack>
-                                    </s-stack>
-                                </s-box>
-                            ))}
-                        </div>
+                                            </Text>
+                                            <Badge tone="success" size="small">Ready</Badge>
+                                        </BlockStack>
+                                    </Box>
+                                </InlineStack>
+                            </div>
+                        ))}
+                    </div>
 
-                        {enabledProducts.length > 8 && (
-                            <s-text tone="subdued">
-                                +{enabledProducts.length - 8} more products
-                            </s-text>
-                        )}
-                    </s-stack>
-                </s-box>
-            </s-section>
+                    {enabledProducts.length > 8 && (
+                        <Text tone="subdued" as="p">
+                            +{enabledProducts.length - 8} more products
+                        </Text>
+                    )}
+                </BlockStack>
+            </Card>
 
             {/* Next steps */}
-            <s-section>
-                <s-box borderWidth="base" borderRadius="base" padding="loose">
-                    <s-stack direction="block" gap="base">
-                        <s-heading>Next Steps</s-heading>
+            <Card padding="500">
+                <BlockStack gap="400">
+                    <Text variant="headingLg" as="h2">Next Steps</Text>
 
-                        <s-ordered-list>
-                            <s-list-item>
-                                <strong>Add the app block to your theme</strong>
-                                <s-paragraph>
-                                    Go to the Theme Editor and add the "VTO Try On Button" block to your product template.
-                                </s-paragraph>
-                            </s-list-item>
+                    <List type="number">
+                        <List.Item>
+                            <Text as="span" fontWeight="bold">Add the app block to your theme</Text>
+                            <Box paddingBlockStart="100">
+                                <Text as="p">Go to the Theme Editor and add the "VTO Try On Button" block to your product template.</Text>
+                            </Box>
+                        </List.Item>
 
-                            <s-list-item>
-                                <strong>Test on your storefront</strong>
-                                <s-paragraph>
-                                    Visit an enabled product page and click the "Try On" button to verify everything works.
-                                </s-paragraph>
-                            </s-list-item>
-                        </s-ordered-list>
-                    </s-stack>
-                </s-box>
-            </s-section>
+                        <List.Item>
+                            <Text as="span" fontWeight="bold">Test on your storefront</Text>
+                            <Box paddingBlockStart="100">
+                                <Text as="p">Visit an enabled product page and click the "Try On" button to verify everything works.</Text>
+                            </Box>
+                        </List.Item>
+                    </List>
+                </BlockStack>
+            </Card>
 
             {/* Important notes */}
-            <s-section>
-                <s-banner tone="info">
-                    <s-stack direction="block" gap="tight">
-                        <s-text fontWeight="semibold">How it works:</s-text>
-                        <s-unordered-list>
-                            <s-list-item>
-                                The "Try On" button will <strong>only appear</strong> on the products you've enabled
-                            </s-list-item>
-                            <s-list-item>
-                                The <strong>selected image</strong> affects VTO quality — front-facing, full garment images work best
-                            </s-list-item>
-                            <s-list-item>
-                                You can update product selection anytime from the{" "}
-                                <s-link href="/app/onboarding/products">Products</s-link> page
-                            </s-list-item>
-                        </s-unordered-list>
-                    </s-stack>
-                </s-banner>
-            </s-section>
+            <Banner tone="info">
+                <BlockStack gap="200">
+                    <Text as="p" fontWeight="semibold">How it works:</Text>
+                    <List type="bullet">
+                        <List.Item>The "Try On" button will <Text as="span" fontWeight="bold">only appear</Text> on the products you've enabled.</List.Item>
+                        <List.Item>The <Text as="span" fontWeight="bold">selected image</Text> affects VTO quality — front-facing, full garment images work best.</List.Item>
+                        <List.Item>You can update product selection anytime from the Products page.</List.Item>
+                    </List>
+                </BlockStack>
+            </Banner>
 
             {/* Actions */}
-            <s-section>
-                <s-stack direction="inline" gap="base">
+            <Box paddingBlockStart="400">
+                <InlineStack gap="300" blockAlign="center">
                     {!isComplete && (
-                        <s-button
+                        <Button
                             variant="primary"
                             onClick={handleComplete}
                             disabled={isLoading}
                         >
                             {isLoading ? "Completing..." : "Mark Setup Complete"}
-                        </s-button>
+                        </Button>
                     )}
 
                     {themeEditorUrl && (
-                        <s-link href={themeEditorUrl} target="_blank">
-                            <s-button variant={isComplete ? "primary" : "secondary"}>
-                                Open Theme Editor →
-                            </s-button>
-                        </s-link>
+                        <Button url={themeEditorUrl} target="_blank" variant={isComplete ? "primary" : "secondary"}>
+                            Open Theme Editor →
+                        </Button>
                     )}
 
+                    <Button onClick={() => navigate("/app")}>Back to Dashboard</Button>
+                </InlineStack>
+            </Box>
 
-                    <s-link href="/app">
-                        <s-button variant="plain">Back to Dashboard</s-button>
-                    </s-link>
-                </s-stack>
-            </s-section>
+            <Divider />
 
             {/* Edit links */}
-            <s-section>
-                <s-stack direction="inline" gap="base">
-                    <s-link href="/app/onboarding/products">
-                        <s-button variant="plain">← Edit Product Selection</s-button>
-                    </s-link>
-                    <s-link href="/app/onboarding/images">
-                        <s-button variant="plain">← Edit Image Selection</s-button>
-                    </s-link>
-                </s-stack>
-            </s-section>
-        </>
+            <Box paddingBlockEnd="400">
+                <InlineStack gap="300">
+                    <Button onClick={() => navigate("/app/onboarding/products")} variant="plain">← Edit Product Selection</Button>
+                    <Button onClick={() => navigate("/app/onboarding/images")} variant="plain">← Edit Image Selection</Button>
+                </InlineStack>
+            </Box>
+        </BlockStack>
     );
 }
 

@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { TUCK_LOGO } from "./logo.js";
 // CSS is compiled separately
 
 
@@ -6,9 +7,62 @@ function safeText(value) {
   return String(value ?? "").slice(0, 300);
 }
 
-// ============ History helpers (localStorage) ============
+// ============ User + History helpers (localStorage) ============
 const HISTORY_KEY = "vto_try_on_history";
+const INFO_KEY = "vto_user_info";
+const GUEST_ID_KEY = "vto_guest_id";
+const GUEST_HAS_IMAGE_KEY = "vto_guest_has_image";
 const MAX_HISTORY = 20;
+
+// Generate a crypto-quality UUID v4, falling back to Math.random
+function generateUUID() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    // Fallback for older browsers
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+}
+
+function getOrCreateGuestId() {
+  try {
+    let id = localStorage.getItem(GUEST_ID_KEY);
+    if (!id) {
+      id = `guest_${generateUUID()}`;
+      localStorage.setItem(GUEST_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    // localStorage unavailable, generate an ephemeral one
+    return `guest_${generateUUID()}`;
+  }
+}
+
+function getGuestHasImage() {
+  try {
+    return localStorage.getItem(GUEST_HAS_IMAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function setGuestHasImage(value) {
+  try {
+    localStorage.setItem(GUEST_HAS_IMAGE_KEY, String(value));
+  } catch { }
+}
+
+function getStoredUserInfo() {
+  try {
+    const raw = localStorage.getItem(INFO_KEY);
+    return raw ? JSON.parse(raw) : { gender: "Male", age: "23", height: "175", weight: "95", fit: "3" };
+  } catch {
+    return { gender: "Male", age: "23", height: "175", weight: "95", fit: "3" };
+  }
+}
 
 function getHistory() {
   try {
@@ -60,14 +114,161 @@ function getApiUrl(endpoint) {
   }
 }
 
+// ============ Translations ============
+const translations = {
+  en: {
+    myInfo: "My Info", history: "History", recentTryOns: "Recent Try-Ons", clearAll: "Clear all",
+    noHistory: "No try-on history yet. Start by trying on a product!",
+    virtualTryOn: "Virtual Try-On",
+    seeHowItLooks: "See how this item looks on you before buying.",
+    signInRequired: "Sign in Required",
+    loginToUse: "Please log in to your store account to use this feature.",
+    logIn: "Log In",
+    uploadFullBody: "Upload Full Body Photo",
+    jpgPngHint: "JPG or PNG. Good lighting works best.",
+    chooseFile: "Choose file",
+    cancel: "Cancel",
+    bodyProfileSaved: "Body Profile Saved",
+    defaultImageHint: "Your default fitting image will be used.",
+    generateTryOn: "Generate Try-On",
+    changePhoto: "Change Photo",
+    processing: "Processing...",
+    processingImage: "Processing Image...",
+    remove: "Remove",
+    tryOnReady: "Try-On Ready",
+    downloadImage: "Download Image",
+    tryAnother: "Try Another",
+    takeMirrorSelfie: "Take Mirror Selfie",
+    takePhoto: "Take a Photo",
+    capturePhoto: "Capture Photo",
+    deleteData: "Delete your data",
+    saveProfile: "Save Profile",
+    gender: "Gender", age: "Age", height: "Height (cm)", weight: "Weight (kg)", bodyFit: "Body Fit",
+    skinTight: "Skin Tight", regularFlow: "Regular Flow", somewhatLoose: "Somewhat Loose", veryLoose: "Very Loose", oversized: "Oversized"
+  },
+  fr: {
+    myInfo: "Mes infos", history: "Historique", recentTryOns: "Essayages récents", clearAll: "Tout effacer",
+    noHistory: "Aucun historique. Commencez par essayer un produit !",
+    virtualTryOn: "Essayage Virtuel",
+    seeHowItLooks: "Découvrez comment cet article vous va avant d'acheter.",
+    signInRequired: "Connexion requise",
+    loginToUse: "Veuillez vous connecter à votre compte boutique pour utiliser cette fonctionnalité.",
+    logIn: "Se connecter",
+    uploadFullBody: "Télécharger une photo",
+    jpgPngHint: "JPG ou PNG. Un bon éclairage est préférable.",
+    chooseFile: "Choisir un fichier",
+    cancel: "Annuler",
+    bodyProfileSaved: "Profil enregistré",
+    defaultImageHint: "Votre image d'essayage par défaut sera utilisée.",
+    generateTryOn: "Générer l'essayage",
+    changePhoto: "Changer de photo",
+    processing: "Traitement...",
+    processingImage: "Traitement de l'image...",
+    remove: "Supprimer",
+    tryOnReady: "Essayage prêt",
+    downloadImage: "Télécharger l'image",
+    tryAnother: "Essayer un autre",
+    takeMirrorSelfie: "Prendre un selfie",
+    takePhoto: "Prendre une photo",
+    capturePhoto: "Capturer la photo",
+    deleteData: "Supprimer vos données",
+    saveProfile: "Enregistrer le profil",
+    gender: "Genre", age: "Âge", height: "Taille (cm)", weight: "Poids (kg)", bodyFit: "Coupe",
+    skinTight: "Moulant", regularFlow: "Normal", somewhatLoose: "Un peu ample", veryLoose: "Très ample", oversized: "Oversize"
+  },
+  es: {
+    myInfo: "Mi Info", history: "Historial", recentTryOns: "Pruebas recientes", clearAll: "Borrar todo",
+    noHistory: "Sin historial. ¡Empieza por probarte un producto!",
+    virtualTryOn: "Prueba Virtual",
+    seeHowItLooks: "Mira cómo te queda este artículo antes de comprar.",
+    signInRequired: "Inicio de sesión requerido",
+    loginToUse: "Inicia sesión en tu cuenta para usar esta función.",
+    logIn: "Iniciar sesión",
+    uploadFullBody: "Subir foto de cuerpo",
+    jpgPngHint: "JPG o PNG. Una buena iluminación es mejor.",
+    chooseFile: "Elegir archivo",
+    cancel: "Cancelar",
+    bodyProfileSaved: "Perfil guardado",
+    defaultImageHint: "Se utilizará su imagen de prueba predeterminada.",
+    generateTryOn: "Generar prueba",
+    changePhoto: "Cambiar foto",
+    processing: "Procesando...",
+    processingImage: "Procesando imagen...",
+    remove: "Eliminar",
+    tryOnReady: "Prueba lista",
+    downloadImage: "Descargar imagen",
+    tryAnother: "Probar otro",
+    takeMirrorSelfie: "Tomar selfie al espejo",
+    takePhoto: "Tomar una foto",
+    capturePhoto: "Capturar foto",
+    deleteData: "Eliminar tus datos",
+    saveProfile: "Guardar perfil",
+    gender: "Género", age: "Edad", height: "Altura (cm)", weight: "Peso (kg)", bodyFit: "Ajuste",
+    skinTight: "Apretado", regularFlow: "Regular", somewhatLoose: "Un poco suelto", veryLoose: "Muy suelto", oversized: "Oversize"
+  },
+  de: {
+    myInfo: "Meine Info", history: "Verlauf", recentTryOns: "Letzte Anproben", clearAll: "Alle löschen",
+    noHistory: "Noch kein Verlauf. Probieren Sie ein Produkt an!",
+    virtualTryOn: "Virtuelle Anprobe",
+    seeHowItLooks: "Sehen Sie, wie dieser Artikel an Ihnen aussieht, bevor Sie kaufen.",
+    signInRequired: "Anmeldung erforderlich",
+    loginToUse: "Bitte loggen Sie sich in Ihr Konto ein, um diese Funktion zu nutzen.",
+    logIn: "Einloggen",
+    uploadFullBody: "Ganzkörperfoto hochladen",
+    jpgPngHint: "JPG oder PNG. Gute Beleuchtung ist am besten.",
+    chooseFile: "Datei wählen",
+    cancel: "Abbrechen",
+    bodyProfileSaved: "Körperprofil gespeichert",
+    defaultImageHint: "Ihr Standard-Anprobebild wird verwendet.",
+    generateTryOn: "Anprobe generieren",
+    changePhoto: "Foto ändern",
+    processing: "Wird bearbeitet...",
+    processingImage: "Bild wird bearbeitet...",
+    remove: "Entfernen",
+    tryOnReady: "Anprobe fertig",
+    downloadImage: "Bild herunterladen",
+    tryAnother: "Ein anderes probieren",
+    takeMirrorSelfie: "Spiegel-Selfie machen",
+    takePhoto: "Ein Foto machen",
+    capturePhoto: "Foto aufnehmen",
+    deleteData: "Ihre Daten löschen",
+    saveProfile: "Profil speichern",
+    gender: "Geschlecht", age: "Alter", height: "Größe (cm)", weight: "Gewicht (kg)", bodyFit: "Passform",
+    skinTight: "Eng anliegend", regularFlow: "Normal", somewhatLoose: "Etwas locker", veryLoose: "Sehr locker", oversized: "Oversized"
+  }
+};
+
 // ============ Main component ============
 export default function PublicVto() {
   const [params] = useState(() => new URLSearchParams(window.location.search));
 
   const [fileUrl, setFileUrl] = useState("");
-  // mode removed: strictly full_body now
+  // Modals / Overlays
   const [showCamera, setShowCamera] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+
+  // User Info Data mapping
+  const [userInfo, setUserInfo] = useState(getStoredUserInfo);
+
+  // Save user info on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(INFO_KEY, JSON.stringify(userInfo));
+    } catch { }
+  }, [userInfo]);
+
+  const handleDeleteData = () => {
+    setUserInfo({ gender: "Male", age: "", height: "", weight: "", fit: "3" });
+    try {
+      localStorage.removeItem(INFO_KEY);
+      // Also clear guest-specific data
+      localStorage.removeItem(GUEST_ID_KEY);
+      localStorage.removeItem(GUEST_HAS_IMAGE_KEY);
+    } catch { }
+    // Reset hasImage so upload area reappears
+    setHasImage(false);
+  };
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [history, setHistory] = useState([]);
@@ -93,6 +294,42 @@ export default function PublicVto() {
   const productHandle = safeText(
     params.get("product_handle") || "unknown"
   );
+  const rawCustomerId = safeText(params.get("customer_id") || "");
+  const rawHasImage = params.get("has_image") === "true";
+  const allowGuest = params.get("allow_guest") === "true";
+  const langParam = params.get("lang");
+
+  // Resolve correct language dictionary
+  const resolvedLang = (langParam && translations[langParam]) ? langParam : "en";
+  const t = translations[resolvedLang];
+
+  const isLoggedIn = !!rawCustomerId;
+  // Access is granted if logged in OR if the merchant allows guest access
+  const hasAccess = isLoggedIn || allowGuest;
+
+  // Compute userId — stable across sessions for both logged-in and guest users
+  const [userId] = useState(() => {
+    if (rawCustomerId) return `shopify_cust_${rawCustomerId}`;
+    // For guest users, retrieve or create a persistent localStorage-backed UUID
+    if (allowGuest) return getOrCreateGuestId();
+    return null;
+  });
+
+  // Track if they have an image
+  // For logged-in users: from Shopify metafield (rawHasImage)
+  // For guest users: from localStorage
+  const [hasImage, setHasImage] = useState(() => {
+    if (isLoggedIn) return rawHasImage;
+    if (allowGuest) return getGuestHasImage();
+    return false;
+  });
+
+  // Sync guest hasImage to localStorage whenever it changes
+  useEffect(() => {
+    if (!isLoggedIn && allowGuest) {
+      setGuestHasImage(hasImage);
+    }
+  }, [hasImage, isLoggedIn, allowGuest]);
 
   const productImage = useMemo(() => {
     try {
@@ -199,7 +436,8 @@ export default function PublicVto() {
 
   // ============ VTO Processing ============
   const handleTryOn = useCallback(async () => {
-    if (!fileUrl || !productImage) return;
+    if (!productImage) return;
+    if (!hasImage && !fileUrl) return; // Prevent submission if no image exists and no file uploaded
 
     setIsProcessing(true);
     setVtoError("");
@@ -207,16 +445,28 @@ export default function PublicVto() {
     setResultUrl("");
 
     try {
-      // Convert blob URL to actual blob
-      const blob = await fetch(fileUrl).then((r) => r.blob());
-
       const fd = new FormData();
-      fd.append("person_image", blob, "photo.jpg");
+      fd.append("user_id", userId);
       fd.append("garment_image", productImage);
       fd.append("shop", shop);
       fd.append("product_id", productHandle);
       fd.append("category", "tops");
       fd.append("session_id", `sess_${Date.now()}`);
+
+      // Size preferences (from the Information modal)
+      fd.append("gender", userInfo.gender);
+      fd.append("age", userInfo.age);
+      fd.append("height", userInfo.height);
+      fd.append("weight", userInfo.weight);
+      fd.append("fit_preference", userInfo.fit);
+
+      // If they picked a new file, append it. Otherwise leave it out (Python uses saved one)
+      if (fileUrl) {
+        const blob = await fetch(fileUrl).then((r) => r.blob());
+        fd.append("person_image", blob, "photo.jpg");
+      } else {
+        // Submitting with existing image; we just let backend know they are using their saved one (implied by missing person_image)
+      }
 
       setVtoProgress(10);
 
@@ -232,6 +482,10 @@ export default function PublicVto() {
         setIsProcessing(false);
         return;
       }
+
+      // Successfully submitted an image file. They now 'have an image'.
+      setHasImage(true);
+      setIsChangingPhoto(false);
 
       // If result is returned immediately (sync mode)
       if (data.resultUrl) {
@@ -254,7 +508,7 @@ export default function PublicVto() {
       setVtoError("Could not connect to the try-on server. Please try again.");
       setIsProcessing(false);
     }
-  }, [fileUrl, productImage, shop, productHandle]);
+  }, [fileUrl, productImage, shop, productHandle, userId, hasImage, rawCustomerId]);
 
   const pollForResult = useCallback(
     (jobId) => {
@@ -322,9 +576,16 @@ export default function PublicVto() {
           <button
             type="button"
             className="topbarLink"
+            onClick={() => setShowInfo(true)}
+          >
+            {t.myInfo}
+          </button>
+          <button
+            type="button"
+            className="topbarLink"
             onClick={toggleHistory}
           >
-            <span aria-hidden="true">🕘</span> History
+            {t.history}
           </button>
           <button
             type="button"
@@ -346,20 +607,20 @@ export default function PublicVto() {
         {showHistory && (
           <div className="historyPanel">
             <div className="historyHeader">
-              <span className="historyTitle">Recent Try-Ons</span>
+              <span className="historyTitle">{t.recentTryOns}</span>
               {history.length > 0 && (
                 <button
                   type="button"
                   className="historyClearBtn"
                   onClick={handleClearHistory}
                 >
-                  Clear all
+                  {t.clearAll}
                 </button>
               )}
             </div>
             {history.length === 0 ? (
               <p className="historyEmpty">
-                No try-on history yet. Start by trying on a product!
+                {t.noHistory}
               </p>
             ) : (
               <div className="historyList">
@@ -387,191 +648,273 @@ export default function PublicVto() {
           </div>
         )}
 
-        <div className="headline">Let&apos;s try it on</div>
-        <p className="subhead">
-          Upload a full-body photo to see how this item looks on you.
-        </p>
-
         <div className="card">
-          {/* Product info */}
-          <div className="productRow">
-            {productImage ? (
-              <img className="thumb" src={productImage} alt={title} />
-            ) : (
-              <div className="thumb" aria-hidden="true" />
-            )}
-            <div className="productMeta">
-              <p className="productTitle" title={title}>
-                {title}
-              </p>
-              <p className="productSub">
-                <span>Shop: </span>
-                <code>{shop || "—"}</code>
-                {" · "}
-                <span>Variant: </span>
-                <code>{variantId || "—"}</code>
-              </p>
-            </div>
+          <div className="headerBlock">
+            <h1 className="headline">{t.virtualTryOn}</h1>
+            <p className="subhead">{t.seeHowItLooks}</p>
           </div>
 
-          {/* Upload area */}
-          {!fileUrl && !resultUrl && (
-            <div className="drop">
+          {!hasAccess ? (
+            <div className="drop" style={{ borderStyle: "solid", textAlign: "center", padding: "40px 20px" }}>
               <div className="dropInner">
-                <div className="dropIcon" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M12 3v10m0 0l-4-4m4 4l4-4M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"
-                      stroke="#0f172a"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
+                <div className="dropIcon" aria-hidden="true" style={{ background: "transparent", borderColor: "#000", color: "#000", marginBottom: "16px", borderRadius: "0" }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3zm0 2c-2.67 0-8 1.337-8 4v3h16v-3c0-2.663-5.33-4-8-4z" fill="currentColor" />
                   </svg>
                 </div>
-                <p className="dropCta">Upload Full Body Photo</p>
-                <p className="dropHint">
-                  JPG or PNG. Good lighting works best.
+                <p className="dropCta" style={{ fontSize: "16px", marginBottom: "8px", textTransform: "uppercase" }}>{t.signInRequired}</p>
+                <p className="dropHint" style={{ marginBottom: "24px" }}>
+                  {t.loginToUse}
                 </p>
-
-                <span className="fileInput">
-                  <button type="button" className="primaryBtn">
-                    Choose file
-                  </button>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    aria-label="Upload full body photo"
-                    onChange={(e) => {
-                      const f = e.currentTarget.files?.[0];
-                      if (!f) return;
-                      const url = URL.createObjectURL(f);
-                      setFileUrl(url);
-                    }}
-                  />
-                </span>
-
-
+                <a
+                  href="/account/login"
+                  target="_top"
+                  className="primaryBtn"
+                  style={{ textDecoration: "none", width: "auto", display: "inline-flex" }}
+                >
+                  {t.logIn}
+                </a>
               </div>
             </div>
-          )}
-
-          {/* Photo preview & Try On */}
-          {fileUrl && !resultUrl && (
-            <div className="previewWrapper">
-              <img
-                className="previewImg"
-                src={fileUrl}
-                alt="Uploaded preview"
-              />
-              <div className="previewActions">
-                <button
-                  type="button"
-                  className="primaryBtn"
-                  onClick={() => {
-                    setFileUrl("");
-                    setVtoError("");
-                    setVtoProgress(0);
-                  }}
-                  disabled={isProcessing}
-                >
-                  Remove
-                </button>
-                <button
-                  type="button"
-                  className="primaryBtn tryOnBtn"
-                  onClick={handleTryOn}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? "Processing..." : "Try On ✨"}
-                </button>
+          ) : (
+            <>
+              {/* Product info */}
+              <div className="productRow">
+                {productImage ? (
+                  <img className="thumb" src={productImage} alt={title} />
+                ) : (
+                  <div className="thumb" aria-hidden="true" />
+                )}
+                <div className="productMeta">
+                  <h2 className="productTitle" title={title}>
+                    {title}
+                  </h2>
+                  <p className="productPrice">$98.00 USD</p>
+                  <p className="productSub">
+                    <span>Size: M</span>
+                    {" · "}
+                    <span>Fabric: 100% Cotton</span>
+                  </p>
+                </div>
               </div>
 
-              {/* Progress bar */}
-              {isProcessing && (
-                <div style={{
-                  marginTop: "12px", width: "100%", height: "6px",
-                  backgroundColor: "#e5e7eb", borderRadius: "3px", overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%", width: `${vtoProgress}%`,
-                    backgroundColor: "#6366f1",
-                    transition: "width 0.5s ease",
-                    borderRadius: "3px",
-                  }} />
+              {/* Upload area - Only show if they DO NOT have an image, OR if they explicitly clicked Change Photo */}
+              {(!hasImage || isChangingPhoto) && !fileUrl && !resultUrl && (
+                <div className="drop">
+                  <div className="dropInner">
+                    <div className="dropIcon" aria-hidden="true">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M12 3v10m0 0l-4-4m4 4l4-4M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"
+                          stroke="#0f172a"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <p className="dropCta">{t.uploadFullBody}</p>
+                    <p className="dropHint">
+                      {t.jpgPngHint}
+                    </p>
+
+                    <span className="fileInput">
+                      <button type="button" className="primaryBtn">
+                        {t.chooseFile}
+                      </button>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        aria-label="Upload full body photo"
+                        onChange={(e) => {
+                          const f = e.currentTarget.files?.[0];
+                          if (!f) return;
+                          const url = URL.createObjectURL(f);
+                          setFileUrl(url);
+                        }}
+                      />
+                    </span>
+
+                    {hasImage && isChangingPhoto && (
+                      <button
+                        type="button"
+                        style={{ marginTop: "12px", background: "none", border: "none", color: "#64748b", textDecoration: "underline", cursor: "pointer", fontSize: "14px" }}
+                        onClick={() => setIsChangingPhoto(false)}
+                      >
+                        {t.cancel}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
-              {isProcessing && (
-                <p style={{ textAlign: "center", fontSize: "13px", color: "#6b7280", marginTop: "6px" }}>
-                  ✨ AI is generating your try-on... {vtoProgress}%
-                </p>
+
+              {/* Quick Try-On state (They already have an image and aren't changing it) */}
+              {hasImage && !isChangingPhoto && !fileUrl && !resultUrl && (
+                <div className="drop">
+                  <div className="dropInner">
+                    <div className="dropIcon" aria-hidden="true" style={{ background: "#ffffff", borderColor: "#000000" }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M5 13l4 4L19 7" stroke="#000000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <p className="dropCta">{t.bodyProfileSaved}</p>
+                    <p className="dropHint">
+                      {t.defaultImageHint}
+                    </p>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "center", width: "100%" }}>
+                      <button
+                        type="button"
+                        className="primaryBtn"
+                        style={{ width: "100%", maxWidth: "240px" }}
+                        onClick={handleTryOn}
+                        disabled={isProcessing}
+                      >
+                        {isProcessing ? t.processing : t.generateTryOn}
+                      </button>
+                      <button
+                        type="button"
+                        style={{ background: "none", border: "none", color: "#64748b", textDecoration: "underline", cursor: "pointer", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}
+                        onClick={() => setIsChangingPhoto(true)}
+                        disabled={isProcessing}
+                      >
+                        {t.changePhoto}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Progress and status indicators for Quick Try-On */}
+                  {isProcessing && (
+                    <div className="progressContainer">
+                      <div className="progressBarTrack">
+                        <div className="progressBarFill" style={{ width: `${vtoProgress}%` }} />
+                      </div>
+                      <p className="progressText">
+                        {t.processingImage} {vtoProgress}%
+                      </p>
+                    </div>
+                  )}
+                  {vtoError && (
+                    <p style={{
+                      color: "#ef4444", textAlign: "center", fontSize: "13px",
+                      marginTop: "16px", padding: "8px 12px",
+                      backgroundColor: "#fef2f2", border: "1px solid #fca5a5"
+                    }}>
+                      {vtoError}
+                    </p>
+                  )}
+                </div>
               )}
 
-              {/* Error */}
-              {vtoError && (
-                <p style={{
-                  color: "#ef4444", textAlign: "center", fontSize: "13px",
-                  marginTop: "8px", padding: "8px 12px",
-                  backgroundColor: "#fef2f2", borderRadius: "6px",
-                }}>
-                  ⚠️ {vtoError}
-                </p>
-              )}
-            </div>
-          )}
+              {/* Photo preview & Try On */}
+              {fileUrl && !resultUrl && (
+                <div className="previewWrapper">
+                  <img
+                    className="previewImg"
+                    src={fileUrl}
+                    alt="Uploaded preview"
+                  />
+                  <div className="previewActions">
+                    <button
+                      type="button"
+                      className="secondaryBtn"
+                      onClick={() => {
+                        setFileUrl("");
+                        setVtoError("");
+                        setVtoProgress(0);
+                      }}
+                      disabled={isProcessing}
+                    >
+                      {t.remove}
+                    </button>
+                    <button
+                      type="button"
+                      className="primaryBtn"
+                      onClick={handleTryOn}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? t.processing : t.generateTryOn}
+                    </button>
+                  </div>
 
-          {/* Result display */}
-          {resultUrl && (
-            <div className="previewWrapper">
-              <p style={{
-                textAlign: "center", fontWeight: "600", fontSize: "15px",
-                color: "#10b981", marginBottom: "8px",
-              }}>
-                ✅ Your Virtual Try-On is ready!
-              </p>
-              <img
-                className="previewImg"
-                src={resultUrl}
-                alt="Virtual Try-On result"
-                style={{ borderRadius: "12px", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}
-              />
-              <div className="previewActions" style={{ marginTop: "12px" }}>
-                <a
-                  href={resultUrl}
-                  download="tryon-result.jpg"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="primaryBtn"
-                  style={{ textDecoration: "none", textAlign: "center" }}
-                >
-                  Download
-                </a>
+                  {/* Progress bar */}
+                  {isProcessing && (
+                    <div className="progressContainer">
+                      <div className="progressBarTrack">
+                        <div className="progressBarFill" style={{ width: `${vtoProgress}%` }} />
+                      </div>
+                      <p className="progressText">
+                        {t.processingImage} {vtoProgress}%
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {vtoError && (
+                    <p style={{
+                      color: "#ef4444", textAlign: "center", fontSize: "13px",
+                      marginTop: "16px", padding: "8px 12px",
+                      backgroundColor: "#fef2f2", border: "1px solid #fca5a5"
+                    }}>
+                      {vtoError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Result display */}
+              {resultUrl && (
+                <div className="previewWrapper">
+                  <p style={{
+                    textAlign: "center", fontWeight: "600", fontSize: "14px",
+                    color: "#000000", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em"
+                  }}>
+                    {t.tryOnReady}
+                  </p>
+                  <img
+                    className="previewImg"
+                    src={resultUrl}
+                    alt="Virtual Try-On result"
+                    style={{ borderRadius: "0", boxShadow: "none" }}
+                  />
+                  <div className="previewActions" style={{ marginTop: "12px", width: "100%", maxWidth: "320px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <a
+                      href={resultUrl}
+                      download="tryon-result.jpg"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="primaryBtn"
+                      style={{ textDecoration: "none", textAlign: "center" }}
+                    >
+                      {t.downloadImage}
+                    </a>
+                    <button
+                      type="button"
+                      className="secondaryBtn"
+                      onClick={() => {
+                        setResultUrl("");
+                        setFileUrl("");
+                        setVtoProgress(0);
+                        setVtoError("");
+                      }}
+                    >
+                      {t.tryAnother}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Camera / Mirror Selfie button */}
+              {(!hasImage || isChangingPhoto) && !fileUrl && !resultUrl && (
                 <button
                   type="button"
-                  className="primaryBtn tryOnBtn"
-                  onClick={() => {
-                    setResultUrl("");
-                    setFileUrl("");
-                    setVtoProgress(0);
-                    setVtoError("");
-                  }}
+                  className="secondaryCard"
+                  onClick={startCamera}
                 >
-                  Try Another
+                  {t.takeMirrorSelfie}
                 </button>
-              </div>
-            </div>
-          )}
-
-          {/* Camera / Mirror Selfie button */}
-          {!fileUrl && !resultUrl && (
-            <button
-              type="button"
-              className="secondaryCard"
-              onClick={startCamera}
-            >
-              <span aria-hidden="true">📷</span>
-              Take Mirror Selfie
-            </button>
+              )}
+            </>
           )}
         </div>
 
@@ -580,7 +923,7 @@ export default function PublicVto() {
           <div className="cameraOverlay">
             <div className="cameraModal">
               <div className="cameraHeader">
-                <span className="cameraTitle">Take a Photo</span>
+                <span className="cameraTitle">{t.takePhoto}</span>
                 <button
                   type="button"
                   className="closeBtn"
@@ -636,25 +979,127 @@ export default function PublicVto() {
 
         {/* Footer */}
         <div className="footer">
-          By using this service, you agree to our{" "}
-          <button
-            type="button"
-            className="footerLink"
-            onClick={() => setShowTerms(true)}
-          >
-            Terms
-          </button>{" "}
-          and{" "}
-          <button
-            type="button"
-            className="footerLink"
-            onClick={() => setShowPrivacy(true)}
-          >
-            Privacy Policy
-          </button>
-          .<br />
-          AI can make mistakes.
+          <div style={{ marginBottom: "8px" }}>
+            By using this service, you agree to our{" "}
+            <button
+              type="button"
+              className="footerLink"
+              onClick={() => setShowTerms(true)}
+            >
+              Terms
+            </button>{" "}
+            and{" "}
+            <button
+              type="button"
+              className="footerLink"
+              onClick={() => setShowPrivacy(true)}
+            >
+              Privacy Policy
+            </button>
+            .<br />
+            AI can make mistakes.
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginTop: "16px", opacity: "0.8" }}>
+            <span style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Powered by</span>
+            <img src={TUCK_LOGO} alt="Tuckk Logo" style={{ height: "14px", width: "auto" }} />
+          </div>
         </div>
+
+        {/* Info / Settings Modal */}
+        {showInfo && (
+          <div className="cameraOverlay">
+            <div className="cameraModal">
+              <div className="cameraHeader">
+                <h2 className="cameraTitle" style={{ textTransform: "none" }}>Your information</h2>
+                <button
+                  type="button"
+                  className="closeBtn"
+                  onClick={() => setShowInfo(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="cameraBody" style={{ paddingTop: "20px" }}>
+                <div className="vtoFormGroup">
+                  <label className="vtoLabel">Gender</label>
+                  <select
+                    className="vtoSelect"
+                    value={userInfo.gender}
+                    onChange={(e) => setUserInfo({ ...userInfo, gender: e.target.value })}
+                  >
+                    <option>Male</option>
+                    <option>Female</option>
+                  </select>
+                </div>
+
+                <div className="vtoFormGroup">
+                  <label className="vtoLabel">Age</label>
+                  <input
+                    type="number"
+                    className="vtoInput"
+                    value={userInfo.age}
+                    onChange={(e) => setUserInfo({ ...userInfo, age: e.target.value })}
+                  />
+                </div>
+
+                <div className="vtoRow">
+                  <div>
+                    <label className="vtoLabel">Height (cm)</label>
+                    <input
+                      type="number"
+                      className="vtoInput"
+                      value={userInfo.height}
+                      onChange={(e) => setUserInfo({ ...userInfo, height: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="vtoLabel">Weight (kg)</label>
+                    <input
+                      type="number"
+                      className="vtoInput"
+                      value={userInfo.weight}
+                      onChange={(e) => setUserInfo({ ...userInfo, weight: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="vtoFormGroup" style={{ marginTop: "24px" }}>
+                  <label className="vtoLabel">Fit preference</label>
+                  <div className="vtoRangeContainer">
+                    <div className="vtoRangeTrackBg">
+                      <div className="vtoRangeDot" />
+                      <div className="vtoRangeDot" />
+                      <div className="vtoRangeDot" />
+                      <div className="vtoRangeDot" />
+                      <div className="vtoRangeDot" />
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      className="vtoRange"
+                      value={userInfo.fit}
+                      onChange={(e) => setUserInfo({ ...userInfo, fit: e.target.value })}
+                    />
+                    <div className="vtoRangeLabels">
+                      <span>Tight</span>
+                      <span>Standard</span>
+                      <span>Loose</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button type="button" className="vtoTrashBtn" onClick={handleDeleteData}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  Delete your data
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Terms Modal */}
         {showTerms && (
