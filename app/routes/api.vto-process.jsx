@@ -1,8 +1,6 @@
-import prisma from "../db.server";
-import { getOrCreateShopSettings } from "../models/shopSettings.server";
-import { getPlanLimit } from "../config/planLimits";
 import { randomUUID } from "crypto";
 import { authenticate } from "../shopify.server";
+import { jobCache } from "../utils/jobCache.server";
 
 /**
  * VTO Process Proxy
@@ -61,44 +59,12 @@ export const action = async ({ request }) => {
             );
         }
 
-        // ── Quota Check ──
-        const settings = await getOrCreateShopSettings(shop);
-        const planTier = settings.planTier || "FREE";
-        const limits = getPlanLimit(planTier);
-
-        if (limits.vtoGenerationsPerMonth !== -1) {
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
-
-            const usageCount = await prisma.apiCallLog.count({
-                where: {
-                    shop,
-                    eventType: "VTO_JOB_REQUEST",
-                    createdAt: { gte: startOfMonth },
-                },
-            });
-
-            if (usageCount >= limits.vtoGenerationsPerMonth) {
-                return new Response(
-                    JSON.stringify({
-                        ok: false,
-                        error: "Monthly VTO quota exceeded",
-                        used: usageCount,
-                        limit: limits.vtoGenerationsPerMonth,
-                        planTier,
-                    }),
-                    { status: 429, headers: corsHeaders }
-                );
-            }
-        }
+        // Quota is managed entirely by the external Python Backend API via api.vto-quota proxy calls.
 
         // ── Build request to external VTO backend ──
         const VTO_API_BASE = process.env.VTO_API_BASE_URL;
-        const VTO_CLIENT_ID = process.env.VTO_CLIENT_ID;
-        const VTO_CLIENT_SECRET = process.env.VTO_CLIENT_SECRET;
 
-        if (!VTO_API_BASE || !VTO_CLIENT_ID || !VTO_CLIENT_SECRET) {
+        if (!VTO_API_BASE) {
             console.error("VTO backend env vars not configured");
             return new Response(
                 JSON.stringify({ ok: false, error: "VTO backend not configured. Contact the app administrator." }),
@@ -114,6 +80,9 @@ export const action = async ({ request }) => {
         backendForm.append("shop", shop);
         backendForm.append("garment_image_url", garmentImageUrl);
 
+        const appUrl = process.env.SHOPIFY_APP_URL || `https://${request.headers.get("host")}`;
+        backendForm.append("callback_url", `${appUrl}/webhooks/vto-result`);
+
         // Attach the person image file ONLY if they uploaded a new one
         if (personImage && (personImage instanceof File || personImage instanceof Blob)) {
             backendForm.append("user_image", personImage, personImage.name || "photo.jpg");
@@ -128,8 +97,6 @@ export const action = async ({ request }) => {
         const backendResponse = await fetch(`${VTO_API_BASE}/vton/process`, {
             method: "POST",
             headers: {
-                "X-Client-ID": VTO_CLIENT_ID,
-                "X-Client-Secret": VTO_CLIENT_SECRET,
                 "Idempotency-Key": idempotencyKey,
             },
             body: backendForm,
@@ -137,22 +104,7 @@ export const action = async ({ request }) => {
 
         const backendData = await backendResponse.json();
 
-        // ── Log the request ──
-        await prisma.apiCallLog.create({
-            data: {
-                shop,
-                eventType: "VTO_JOB_REQUEST",
-                isSuccess: backendResponse.ok,
-                requestId: idempotencyKey,
-                message: backendResponse.ok ? "Job submitted" : `Backend error: ${backendData.error || backendResponse.status}`,
-                metadata: {
-                    jobId: backendData.job_id || null,
-                    productId,
-                    category,
-                    planTier,
-                },
-            },
-        });
+        // The external API handles its own logging of requests and usage.
 
         if (!backendResponse.ok) {
             return new Response(
@@ -199,6 +151,16 @@ export const action = async ({ request }) => {
             } catch (err) {
                 console.error("Failed to update Shopify Customer Metafield:", err);
             }
+        }
+
+        // Initialize our caching layer so the polling proxy sees this job immediately
+        if (backendData.job_id) {
+            jobCache.set(backendData.job_id, {
+                status: backendData.status || "PROCESSING",
+                resultUrl: backendData.output_image_url || null,
+                error: null,
+                updatedAt: Date.now(),
+            });
         }
 
         // ── Return job info to frontend ──

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useLoaderData, useSubmit, useNavigation, useActionData, useRouteError, Form, useNavigate } from "react-router"; // react-router v7
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
+import { Select, Checkbox, BlockStack, InlineStack } from "@shopify/polaris";
 import {
     getAllProductConfigs,
     bulkEnableProducts,
@@ -113,8 +114,24 @@ export const loader = async ({ request }) => {
 
     // Params for product pagination
     const searchQuery = url.searchParams.get("q") || "";
+    const filterVendor = url.searchParams.get("vendor") || "";
+    const filterType = url.searchParams.get("type") || "";
     const after = url.searchParams.get("after") || null;
     const pageSize = 20;
+
+    // 0. Fetch Filters
+    const FILTERS_QUERY = `
+      query getFilters {
+        shop {
+          productTypes(first: 50) { edges { node } }
+          productVendors(first: 50) { edges { node } }
+        }
+      }
+    `;
+    const filtersResp = await admin.graphql(FILTERS_QUERY);
+    const filtersData = await filtersResp.json();
+    const productTypes = filtersData.data?.shop?.productTypes?.edges?.map(e => e.node).filter(Boolean) || [];
+    const productVendors = filtersData.data?.shop?.productVendors?.edges?.map(e => e.node).filter(Boolean) || [];
 
     // 1. Fetch Collections (limit 50 for now)
     const collectionsResp = await admin.graphql(COLLECTIONS_QUERY, { variables: { first: 50 } });
@@ -125,7 +142,12 @@ export const loader = async ({ request }) => {
     })) || [];
 
     // 2. Fetch Products
-    const shopifyQuery = searchQuery ? `title:*${searchQuery}*` : null;
+    let queryParts = [];
+    if (searchQuery) queryParts.push(`title:*${searchQuery}*`);
+    if (filterVendor) queryParts.push(`vendor:'${filterVendor}'`);
+    if (filterType) queryParts.push(`product_type:'${filterType}'`);
+    const shopifyQuery = queryParts.length > 0 ? queryParts.join(" AND ") : null;
+
     const productsResp = await admin.graphql(PRODUCTS_QUERY_FORWARD, {
         variables: { first: pageSize, after, query: shopifyQuery }
     });
@@ -183,6 +205,10 @@ export const loader = async ({ request }) => {
         activeVtoProducts,
         pageInfo,
         searchQuery,
+        filterVendor,
+        filterType,
+        productTypes,
+        productVendors,
         enabledCount: enabledProductIds.size
     };
 };
@@ -206,6 +232,17 @@ export const action = async ({ request }) => {
         const productId = formData.get("productId");
         await bulkDisableProducts(shop, [productId]);
         return { success: true, message: "Product disabled" };
+    }
+
+    if (intent === "bulk_enable_products") {
+        const payloadStr = formData.get("payload");
+        if (!payloadStr) return { error: "Missing payload" };
+        const payload = JSON.parse(payloadStr);
+        if (payload.length > 0) {
+            await bulkEnableProducts(shop, payload);
+            return { success: true, message: `Enabled ${payload.length} products for Virtual Try-On.` };
+        }
+        return { error: "No products selected" };
     }
 
     if (intent === "enable_collection") {
@@ -249,7 +286,10 @@ export const action = async ({ request }) => {
 };
 
 export default function ManageProducts() {
-    const { collections, products, activeVtoProducts, pageInfo, searchQuery, enabledCount } = useLoaderData();
+    const {
+        collections, products, activeVtoProducts, pageInfo,
+        searchQuery, filterVendor, filterType, productTypes, productVendors, enabledCount
+    } = useLoaderData();
     const submit = useSubmit();
     const navigation = useNavigation();
     const actionData = useActionData();
@@ -258,18 +298,56 @@ export default function ManageProducts() {
     // Default to 'active' view to distinguish from onboarding list
     const [activeTab, setActiveTab] = useState("active"); // 'active' | 'collections' | 'products'
     const [localSearch, setLocalSearch] = useState(searchQuery || "");
+    const [localVendor, setLocalVendor] = useState(filterVendor || "");
+    const [localType, setLocalType] = useState(filterType || "");
+    const [selectedProducts, setSelectedProducts] = useState(new Set());
 
     const isLoading = navigation.state !== "idle";
 
     // Search handlers
     const handleSearch = useCallback(() => {
-        submit({ q: localSearch }, { method: "get" });
-    }, [localSearch, submit]);
+        submit({ q: localSearch, vendor: localVendor, type: localType }, { method: "get" });
+        setSelectedProducts(new Set());
+    }, [localSearch, localVendor, localType, submit]);
 
     const handleNextPage = () => {
         if (pageInfo.hasNextPage) {
-            submit({ q: searchQuery, after: pageInfo.endCursor }, { method: "get" });
+            submit({
+                q: searchQuery,
+                vendor: filterVendor,
+                type: filterType,
+                after: pageInfo.endCursor
+            }, { method: "get" });
         }
+    };
+
+    // Checkbox and Bulk Actions
+    const toggleProduct = (id) => {
+        const next = new Set(selectedProducts);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedProducts(next);
+    };
+
+    const toggleAll = () => {
+        if (selectedProducts.size === products.length) {
+            setSelectedProducts(new Set());
+        } else {
+            setSelectedProducts(new Set(products.map(p => p.id)));
+        }
+    };
+
+    const handleBulkEnable = () => {
+        const productsToEnable = products.filter(p => selectedProducts.has(p.id));
+        const formData = new FormData();
+        formData.append("intent", "bulk_enable_products");
+        formData.append("payload", JSON.stringify(productsToEnable.map(p => ({
+            productId: p.id,
+            productTitle: p.title,
+            productImage: p.featuredImage?.url || ""
+        }))));
+        submit(formData, { method: "post" });
+        setSelectedProducts(new Set());
     };
 
     const handleProductToggle = (p, intent) => {
@@ -558,21 +636,63 @@ export default function ManageProducts() {
             ) : (
                 <s-section title="Browse Store Products">
                     <s-stack direction="block" gap="base">
-                        {/* Search Bar */}
-                        <s-stack direction="inline" gap="base">
-                            <s-text-field
-                                value={localSearch}
-                                onChange={(e) => setLocalSearch(e.target.value)}
-                                placeholder="Search all products..."
-                            />
-                            <s-button onClick={handleSearch} disabled={isLoading}>Search</s-button>
-                        </s-stack>
+                        {/* Search and Filters */}
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '16px' }}>
+                            <div style={{ flex: 1, minWidth: '200px' }}>
+                                <s-text-field
+                                    value={localSearch}
+                                    onChange={(e) => setLocalSearch(e.target.value)}
+                                    placeholder="Search specific products..."
+                                />
+                            </div>
+                            <div style={{ flex: 1, minWidth: '150px' }}>
+                                <Select
+                                    labelHidden
+                                    label="Brand"
+                                    options={[
+                                        { label: 'All Brands', value: '' },
+                                        ...productVendors.map(v => ({ label: v, value: v }))
+                                    ]}
+                                    onChange={(val) => setLocalVendor(val)}
+                                    value={localVendor}
+                                />
+                            </div>
+                            <div style={{ flex: 1, minWidth: '150px' }}>
+                                <Select
+                                    labelHidden
+                                    label="Category"
+                                    options={[
+                                        { label: 'All Categories', value: '' },
+                                        ...productTypes.map(pt => ({ label: pt, value: pt }))
+                                    ]}
+                                    onChange={(val) => setLocalType(val)}
+                                    value={localType}
+                                />
+                            </div>
+                            <s-button onClick={handleSearch} disabled={isLoading} variant="primary">Filter</s-button>
+                        </div>
+
+                        {/* Bulk Actions */}
+                        {selectedProducts.size > 0 && (
+                            <div style={{ background: '#f4f6f8', padding: '12px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <s-text fontWeight="semibold">{selectedProducts.size} product(s) selected</s-text>
+                                <s-button variant="primary" onClick={handleBulkEnable} disabled={isLoading}>Bulk Enable VTON</s-button>
+                            </div>
+                        )}
 
                         {/* Products Table */}
                         <s-box padding="none" borderWidth="base" borderRadius="base" overflow="hidden">
                             <s-table>
                                 <s-table-header>
                                     <s-table-header-row>
+                                        <s-table-header-cell style={{ width: '40px', padding: '12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                            <Checkbox
+                                                checked={products.length > 0 && selectedProducts.size === products.length}
+                                                onChange={toggleAll}
+                                                label="Select All"
+                                                labelHidden
+                                            />
+                                        </s-table-header-cell>
                                         <s-table-header-cell>Product</s-table-header-cell>
                                         <s-table-header-cell>Status</s-table-header-cell>
                                         <s-table-header-cell>VTO Image</s-table-header-cell>
@@ -582,6 +702,19 @@ export default function ManageProducts() {
                                 <s-table-body>
                                     {products.map(p => (
                                         <s-table-row key={p.id}>
+                                            <s-table-cell style={{ padding: '12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                                <Checkbox
+                                                    checked={selectedProducts.has(p.id)}
+                                                    onChange={(newChecked) => {
+                                                        const next = new Set(selectedProducts);
+                                                        if (newChecked) next.add(p.id);
+                                                        else next.delete(p.id);
+                                                        setSelectedProducts(next);
+                                                    }}
+                                                    label={`Select ${p.title}`}
+                                                    labelHidden
+                                                />
+                                            </s-table-cell>
                                             <s-table-cell>
                                                 <s-stack direction="inline" align="center" gap="base">
                                                     {p.featuredImage ? (

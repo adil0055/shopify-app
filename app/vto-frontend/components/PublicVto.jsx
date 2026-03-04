@@ -144,7 +144,10 @@ const translations = {
     deleteData: "Delete your data",
     saveProfile: "Save Profile",
     gender: "Gender", age: "Age", height: "Height (cm)", weight: "Weight (kg)", bodyFit: "Body Fit",
-    skinTight: "Skin Tight", regularFlow: "Regular Flow", somewhatLoose: "Somewhat Loose", veryLoose: "Very Loose", oversized: "Oversized"
+    skinTight: "Skin Tight", regularFlow: "Regular Flow", somewhatLoose: "Somewhat Loose", veryLoose: "Very Loose", oversized: "Oversized",
+    checkingQuota: "Checking access...",
+    quotaExceeded: "Usage Limit Reached",
+    contactMerchant: "This store has exceeded its virtual try-on usage limits. Please check back later or contact the seller."
   },
   fr: {
     myInfo: "Mes infos", history: "Historique", recentTryOns: "Essayages récents", clearAll: "Tout effacer",
@@ -203,8 +206,11 @@ const translations = {
     capturePhoto: "Capturar foto",
     deleteData: "Eliminar tus datos",
     saveProfile: "Guardar perfil",
-    gender: "Género", age: "Edad", height: "Altura (cm)", weight: "Peso (kg)", bodyFit: "Ajuste",
-    skinTight: "Apretado", regularFlow: "Regular", somewhatLoose: "Un poco suelto", veryLoose: "Muy suelto", oversized: "Oversize"
+    gender: "Genre", age: "Âge", height: "Taille (cm)", weight: "Poids (kg)", bodyFit: "Coupe",
+    skinTight: "Moulant", regularFlow: "Normal", somewhatLoose: "Un peu ample", veryLoose: "Très ample", oversized: "Oversize",
+    checkingQuota: "Vérification de l'accès...",
+    quotaExceeded: "Limite d'utilisation atteinte",
+    contactMerchant: "Cette boutique a dépassé sa limite d'essayage virtuel. Revenez plus tard ou contactez le vendeur."
   },
   de: {
     myInfo: "Meine Info", history: "Verlauf", recentTryOns: "Letzte Anproben", clearAll: "Alle löschen",
@@ -233,9 +239,12 @@ const translations = {
     capturePhoto: "Foto aufnehmen",
     deleteData: "Ihre Daten löschen",
     saveProfile: "Profil speichern",
-    gender: "Geschlecht", age: "Alter", height: "Größe (cm)", weight: "Gewicht (kg)", bodyFit: "Passform",
-    skinTight: "Eng anliegend", regularFlow: "Normal", somewhatLoose: "Etwas locker", veryLoose: "Sehr locker", oversized: "Oversized"
-  }
+    gender: "Género", age: "Edad", height: "Altura (cm)", weight: "Peso (kg)", bodyFit: "Ajuste",
+    skinTight: "Apretado", regularFlow: "Regular", somewhatLoose: "Un poco suelto", veryLoose: "Muy suelto", oversized: "Oversize",
+    checkingQuota: "Comprobando acceso...",
+    quotaExceeded: "Límite de uso alcanzado",
+    contactMerchant: "Esta tienda ha excedido sus límites de prueba virtual. Vuelve más tarde o contacta al vendedor."
+  },
 };
 
 // ============ Main component ============
@@ -243,10 +252,11 @@ export default function PublicVto() {
   const [params] = useState(() => new URLSearchParams(window.location.search));
 
   const [fileUrl, setFileUrl] = useState("");
-  // Modals / Overlays
   const [showCamera, setShowCamera] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState("");
 
   // User Info Data mapping
   const [userInfo, setUserInfo] = useState(getStoredUserInfo);
@@ -266,8 +276,40 @@ export default function PublicVto() {
       localStorage.removeItem(GUEST_ID_KEY);
       localStorage.removeItem(GUEST_HAS_IMAGE_KEY);
     } catch { }
-    // Reset hasImage so upload area reappears
     setHasImage(false);
+  };
+
+  const saveProfileToBackend = async () => {
+    setIsSavingProfile(true);
+    setProfileMsg("");
+    try {
+      const fd = new FormData();
+      fd.append("user_id", userId);
+      fd.append("gender", userInfo.gender);
+      fd.append("age", userInfo.age || "");
+      fd.append("height", userInfo.height || "");
+      fd.append("weight", userInfo.weight || "");
+      fd.append("fit_preference", userInfo.fit || "");
+
+      const res = await fetch(getApiUrl("/api/vto-profile"), {
+        method: "POST",
+        body: fd,
+      });
+
+      if (res.ok) {
+        setProfileMsg(t.bodyProfileSaved);
+        setTimeout(() => {
+          setProfileMsg("");
+          setShowInfo(false);
+        }, 1500);
+      } else {
+        setProfileMsg("Error saving profile");
+      }
+    } catch {
+      setProfileMsg("Error saving profile");
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -280,6 +322,10 @@ export default function PublicVto() {
   const [vtoError, setVtoError] = useState("");
   const [resultUrl, setResultUrl] = useState("");
   const pollRef = useRef(null);
+
+  // Quota state
+  const [isCheckingQuota, setIsCheckingQuota] = useState(true);
+  const [hasQuota, setHasQuota] = useState(true);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -352,6 +398,21 @@ export default function PublicVto() {
         variantId,
       });
     }
+
+    // Check quota
+    const checkQuota = async () => {
+      try {
+        const res = await fetch(getApiUrl(`/api/vto-quota?shop=${encodeURIComponent(shop)}`));
+        const data = await res.json();
+        setHasQuota(data.hasQuota !== false); // default to true if api fails
+      } catch (err) {
+        setHasQuota(true);
+      } finally {
+        setIsCheckingQuota(false);
+      }
+    };
+
+    checkQuota();
   }, [title, productHandle, productImage, shop, variantId]);
 
   // ============ Camera ============
@@ -453,12 +514,7 @@ export default function PublicVto() {
       fd.append("category", "tops");
       fd.append("session_id", `sess_${Date.now()}`);
 
-      // Size preferences (from the Information modal)
-      fd.append("gender", userInfo.gender);
-      fd.append("age", userInfo.age);
-      fd.append("height", userInfo.height);
-      fd.append("weight", userInfo.weight);
-      fd.append("fit_preference", userInfo.fit);
+      // Removed sizing details from this endpoint payload since they now go via /users/profile
 
       // If they picked a new file, append it. Otherwise leave it out (Python uses saved one)
       if (fileUrl) {
@@ -567,6 +623,36 @@ export default function PublicVto() {
     clearHistory();
     setHistory([]);
   }, []);
+
+  if (isCheckingQuota) {
+    return (
+      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontFamily: "var(--font-family)", color: "#5c5f62", fontSize: "14px", fontWeight: "500" }}>{t.checkingQuota}</p>
+      </div>
+    );
+  }
+
+  if (!hasQuota) {
+    return (
+      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: "40px 20px" }}>
+        <div style={{ textAlign: "center", maxWidth: "400px" }}>
+          <div aria-hidden="true" style={{ marginBottom: "16px" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#D82C0D" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </div>
+          <h2 style={{ fontFamily: "var(--font-family)", color: "#202223", fontSize: "20px", fontWeight: "600", marginBottom: "8px" }}>
+            {t.quotaExceeded}
+          </h2>
+          <p style={{ fontFamily: "var(--font-family)", color: "#6d7175", fontSize: "14px", lineHeight: "1.5" }}>
+            {t.contactMerchant}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -1090,12 +1176,22 @@ export default function PublicVto() {
                   </div>
                 </div>
 
-                <button type="button" className="vtoTrashBtn" onClick={handleDeleteData}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                  Delete your data
-                </button>
+                <div style={{ display: "flex", gap: "12px", width: "100%", marginTop: "16px" }}>
+                  <button type="button" className="vtoTrashBtn" onClick={handleDeleteData} style={{ flex: 1 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    {t.deleteData}
+                  </button>
+                  <button type="button" className="primaryBtn" onClick={saveProfileToBackend} disabled={isSavingProfile} style={{ flex: 1, padding: "8px 16px" }}>
+                    {isSavingProfile ? "..." : t.saveProfile}
+                  </button>
+                </div>
+                {profileMsg && (
+                  <p style={{ textAlign: "center", color: profileMsg.includes("Error") ? "#ef4444" : "#10b981", marginTop: "12px", fontSize: "14px", fontWeight: "600" }}>
+                    {profileMsg}
+                  </p>
+                )}
               </div>
             </div>
           </div>

@@ -10,17 +10,7 @@ Processing is **asynchronous**. You submit a job and receive results via a **web
 
 ## Authentication
 
-Every request must include these headers:
-
-| Header | Description |
-|---|---|
-| `X-Client-ID` | Your client identifier (provided during onboarding) |
-| `X-Client-Secret` | Your client secret (provided during onboarding) |
-
-| Scenario | Response |
-|---|---|
-| Missing or invalid credentials | `401 Unauthorized` |
-| Account suspended | `403 Forbidden` |
+Client accounts are created and authenticated automatically by the VTON backend. You do not need to pass manual API credentials.
 
 ---
 
@@ -64,8 +54,6 @@ Submits a Virtual Try-On job for asynchronous processing.
 
 | Header | Required | Description |
 |---|---|---|
-| `X-Client-ID` | Yes | Client identifier |
-| `X-Client-Secret` | Yes | Client secret |
 | `Idempotency-Key` | No | UUID to prevent duplicate processing. If omitted, one is auto-generated (no retry protection). Same key returns the cached response for 24 hours. |
 
 #### Form Fields
@@ -109,47 +97,9 @@ Submits a Virtual Try-On job for asynchronous processing.
 
 ---
 
-### 2. Poll Job Status
-
-```
-GET /jobs/{job_id}
-```
-
-#### Headers
-
-`X-Client-ID`, `X-Client-Secret`
-
-#### Success Response (`200`)
-
-```json
-{
-  "job_id": "a1b2c3d4-...",
-  "status": "SUCCESS",
-  "output_image_url": "https://presigned-s3-url.../result.png",
-  "error": null,
-  "created_at": "2025-01-15T10:30:00+00:00"
-}
-```
-
-#### Job Statuses
-
-| Status | Description |
-|---|---|
-| `QUEUED` | Job accepted, waiting for processing. |
-| `RUNNING` | Currently being processed. |
-| `SUCCESS` | Completed. `output_image_url` contains a presigned URL (valid for **1 hour**). |
-| `FAILED` | Processing failed. See `error` field. |
-| `TIMEOUT` | Processing timed out. Retry the request. |
-
-#### Error Responses
-
-| Status | Reason |
-|---|---|
-| `404` | Job not found |
-
 ---
 
-### 3. Get Categories
+### 2. Get Categories
 
 ```
 GET /config/categories
@@ -157,7 +107,7 @@ GET /config/categories
 
 #### Headers
 
-`X-Client-ID`, `X-Client-Secret`
+(None required)
 
 #### Success Response (`200`)
 
@@ -198,8 +148,6 @@ The callback URL is set during onboarding. You can override it per-request using
 - `output_image_url` is a presigned URL valid for **1 hour**.
 - For `FAILED` or `TIMEOUT` jobs, `output_image_url` will be `null` and `error` will contain the reason.
 - Your endpoint must respond with `2xx` within **10 seconds**.
-
-> **Recommendation:** Use webhooks as the primary delivery mechanism and polling as a fallback.
 
 ---
 
@@ -258,8 +206,6 @@ Include an `Idempotency-Key` header (UUID) to safely retry failed requests witho
 
 ```bash
 curl -X POST "{BASE_URL}/api/v1/external/vton/process" \
-  -H "X-Client-ID: your_client_id" \
-  -H "X-Client-Secret: your_client_secret" \
   -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
   -F "user_id=user_123" \
   -F "user_image_id=v1" \
@@ -276,12 +222,9 @@ import requests
 import time
 
 BASE_URL = "{BASE_URL}/api/v1/external"
-HEADERS = {
-    "X-Client-ID": "your_client_id",
-    "X-Client-Secret": "your_client_secret",
-}
+HEADERS = {}
 
-# 1. Submit a VTON job
+# 1. Submit a VTON job with webhooks!
 with open("user_photo.jpg", "rb") as user_img, open("garment.jpg", "rb") as garment_img:
     resp = requests.post(
         f"{BASE_URL}/vton/process",
@@ -290,6 +233,7 @@ with open("user_photo.jpg", "rb") as user_img, open("garment.jpg", "rb") as garm
             "user_id": "user_123",
             "user_image_id": "v1",
             "category": "tops",
+            "callback_url": "https://my-shopify-app.com/webhooks/vto-result",
             "consent_confirmed": "true",
         },
         files={
@@ -301,14 +245,5 @@ with open("user_photo.jpg", "rb") as user_img, open("garment.jpg", "rb") as garm
 job_id = resp.json()["job_id"]
 print(f"Job submitted: {job_id}")
 
-# 2. Poll for result
-while True:
-    status_resp = requests.get(f"{BASE_URL}/jobs/{job_id}", headers=HEADERS)
-    job = status_resp.json()
-
-    if job["status"] in ("SUCCESS", "FAILED", "TIMEOUT"):
-        print(f"Result: {job}")
-        break
-
-    time.sleep(5)
+# Wait for the webhook to POST to your callback_url!
 ```

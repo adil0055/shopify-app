@@ -10,16 +10,10 @@ export const action = async ({ request }) => {
     // 1. Notify External Python Backend to Delete Images and Tokens
     try {
       const VTO_API_BASE = process.env.VTO_API_BASE_URL;
-      const VTO_CLIENT_ID = process.env.VTO_CLIENT_ID;
-      const VTO_CLIENT_SECRET = process.env.VTO_CLIENT_SECRET;
 
-      if (VTO_API_BASE && VTO_CLIENT_ID && VTO_CLIENT_SECRET) {
+      if (VTO_API_BASE) {
         const response = await fetch(`${VTO_API_BASE}/api/v1/external/merchants/${shop}`, {
           method: "DELETE",
-          headers: {
-            "X-Client-ID": VTO_CLIENT_ID,
-            "X-Client-Secret": VTO_CLIENT_SECRET,
-          }
         });
 
         if (!response.ok) {

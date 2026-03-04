@@ -1,5 +1,5 @@
-import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
+import { jobCache } from "../utils/jobCache.server";
 
 export const loader = async ({ request }) => {
     const corsHeaders = {
@@ -43,79 +43,37 @@ export const loader = async ({ request }) => {
         );
     }
 
-    const VTO_API_BASE = process.env.VTO_API_BASE_URL;
-    const VTO_CLIENT_ID = process.env.VTO_CLIENT_ID;
-    const VTO_CLIENT_SECRET = process.env.VTO_CLIENT_SECRET;
-
-    if (!VTO_API_BASE || !VTO_CLIENT_ID || !VTO_CLIENT_SECRET) {
-        return new Response(
-            JSON.stringify({ ok: false, error: "VTO backend not configured" }),
-            { status: 503, headers: corsHeaders }
-        );
-    }
-
     try {
-        const backendResponse = await fetch(`${VTO_API_BASE}/jobs/${jobId}`, {
-            method: "GET",
-            headers: {
-                "X-Client-ID": VTO_CLIENT_ID,
-                "X-Client-Secret": VTO_CLIENT_SECRET,
-            },
-        });
+        const cachedData = jobCache.get(jobId);
 
-        const data = await backendResponse.json();
-
-        if (!backendResponse.ok) {
+        if (!cachedData) {
+            // It might not be in the cache yet, or it expired.
+            // We return processing by default so the frontend doesn't panic.
             return new Response(
                 JSON.stringify({
-                    ok: false,
-                    error: data.error || "Failed to fetch job status",
+                    ok: true,
+                    jobId,
+                    status: "processing",
+                    progress: 20,
+                    resultUrl: null,
+                    error: null,
                 }),
-                { status: backendResponse.status, headers: corsHeaders }
+                { status: 200, headers: corsHeaders }
             );
         }
 
-        // Normalize status to our format
-        const status = (data.status || "").toUpperCase();
+        const status = (cachedData.status || "").toUpperCase();
         const isComplete = status === "SUCCESS" || status === "COMPLETED";
         const isFailed = status === "FAILED" || status === "ERROR";
-
-        // Log completion/failure (only once — check if already logged)
-        if ((isComplete || isFailed) && shop) {
-            const existingLog = await prisma.apiCallLog.findFirst({
-                where: {
-                    shop,
-                    eventType: isComplete ? "VTO_JOB_SUCCESS" : "VTO_JOB_FAILURE",
-                    requestId: jobId,
-                },
-            });
-
-            if (!existingLog) {
-                await prisma.apiCallLog.create({
-                    data: {
-                        shop,
-                        eventType: isComplete ? "VTO_JOB_SUCCESS" : "VTO_JOB_FAILURE",
-                        isSuccess: isComplete,
-                        requestId: jobId,
-                        message: isComplete
-                            ? "Job completed successfully"
-                            : `Job failed: ${data.error || "unknown"}`,
-                        metadata: {
-                            outputUrl: data.output_image_url || null,
-                        },
-                    },
-                });
-            }
-        }
 
         return new Response(
             JSON.stringify({
                 ok: true,
                 jobId,
                 status: isComplete ? "completed" : isFailed ? "failed" : "processing",
-                progress: data.progress || null,
-                resultUrl: data.output_image_url || null,
-                error: isFailed ? (data.error || "Processing failed") : null,
+                progress: cachedData.progress || null,
+                resultUrl: cachedData.resultUrl || null,
+                error: isFailed ? (cachedData.error || "Processing failed") : null,
             }),
             { status: 200, headers: corsHeaders }
         );
